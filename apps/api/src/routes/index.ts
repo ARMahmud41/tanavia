@@ -7,6 +7,7 @@ import { stockRoutes } from './stock.js';
 import { staffRoutes } from './staff.js';
 import { financeRoutes } from './finance.js';
 import { courierRoutes } from './courier.js';
+import { paymentRoutes } from './payments.js';
 import { webhookRoutes } from './webhooks/index.js';
 
 export async function registerRoutes(app: FastifyInstance) {
@@ -25,5 +26,6 @@ export async function registerRoutes(app: FastifyInstance) {
   await app.register(staffRoutes, { prefix: '/api/staff' });
   await app.register(financeRoutes, { prefix: '/api/finance' });
   await app.register(courierRoutes, { prefix: '/api/courier' });
+  await app.register(paymentRoutes, { prefix: '/api/payments' });
   await app.register(webhookRoutes, { prefix: '/api/webhooks' });
 }
