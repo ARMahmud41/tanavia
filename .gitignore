@@ -39,4 +39,8 @@ temp/
 
 # Secrets
 *.pem
-*.key
+*.key# TypeScript build cache
+*.tsbuildinfo
+
+# Turbo cache
+.turbo/
