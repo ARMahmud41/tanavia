@@ -1,0 +1,743 @@
+// ============================================
+// TANAVIA - Prisma Schema
+// Database: PostgreSQL (Neon)
+// Part 1: Auth + Users + Shift
+// ============================================
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+// ============================================
+// ENUMS
+// ============================================
+
+enum Role {
+  CUSTOMER
+  STAFF
+  MANAGER
+  ADMIN
+}
+
+enum ShiftStatus {
+  OPEN
+  CLOSED
+}
+
+// ============================================
+// USER (Customer + Staff + Admin)
+// ============================================
+
+model User {
+  id            String    @id @default(cuid())
+  email         String    @unique
+  phone         String?   @unique
+  name          String
+  passwordHash  String
+  role          Role      @default(CUSTOMER)
+  emailVerified DateTime?
+  phoneVerified DateTime?
+  twoFactorOn   Boolean   @default(false)
+  twoFactorSecret String?
+  lastLoginAt   DateTime?
+  failedLogins  Int       @default(0)
+  lockedUntil   DateTime?
+  active        Boolean   @default(true)
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  sessions      Session[]
+  addresses     Address[]
+  orders        Order[]
+  reviews       Review[]
+  wishlist      Wishlist[]
+  notifications Notification[]
+  shifts        Shift[]
+  reports       StaffReport[]   @relation("ReportedBy")
+  resolvedReports StaffReport[] @relation("ResolvedBy")
+  auditLogs     AuditLog[]
+  cashDrawers   CashDrawer[]
+
+  @@index([email])
+  @@index([phone])
+  @@index([role])
+}
+
+// ============================================
+// SESSION (JWT refresh tokens)
+// ============================================
+
+model Session {
+  id           String   @id @default(cuid())
+  userId       String
+  refreshToken String   @unique
+  userAgent    String?
+  ip           String?
+  expiresAt    DateTime
+  revokedAt    DateTime?
+  createdAt    DateTime @default(now())
+
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([refreshToken])
+  @@index([expiresAt])
+}
+
+// ============================================
+// ADDRESS (Customer delivery addresses)
+// ============================================
+
+model Address {
+  id         String   @id @default(cuid())
+  userId     String
+  label      String?  @default("Home")
+  fullName   String
+  phone      String
+  address    String   @db.Text
+  district   String
+  isDefault  Boolean  @default(false)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+// ============================================
+// SHIFT (Staff working hours)
+// ============================================
+
+model Shift {
+  id           String      @id @default(cuid())
+  userId       String
+  status       ShiftStatus @default(OPEN)
+  openingCash  Decimal     @default(0) @db.Decimal(10, 2)
+  closingCash  Decimal?    @db.Decimal(10, 2)
+  openedAt     DateTime    @default(now())
+  closedAt     DateTime?
+  note         String?     @db.Text
+  createdAt    DateTime    @default(now())
+  updatedAt    DateTime    @updatedAt
+
+  user         User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  orders       Order[]
+
+  @@index([userId, status])
+  @@index([openedAt])
+}    
+// ============================================
+// PRODUCT (with variants)
+// ============================================
+
+enum ProductStatus {
+  DRAFT
+  ACTIVE
+  ARCHIVED
+}
+
+model Product {
+  id            String        @id @default(cuid())
+  slug          String        @unique
+  name          String
+  nameBn        String?
+  description   String        @db.Text
+  descriptionBn String?       @db.Text
+  category      String
+  brand         String        @default("TANAVIA")
+  sku           String        @unique
+  barcode       String        @unique
+  cost          Decimal       @db.Decimal(10, 2)
+  price         Decimal       @db.Decimal(10, 2)
+  discount      Int           @default(0)
+  status        ProductStatus @default(ACTIVE)
+  active        Boolean       @default(true)
+  featured      Boolean       @default(false)
+  tryable       Boolean       @default(true)
+  shape         String        @default("tee")
+  images        String[]
+  tags          String[]
+  rating        Float         @default(0)
+  reviewCount   Int           @default(0)
+  soldCount     Int           @default(0)
+  lowStockAt    Int           @default(5)
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+
+  variants      Variant[]
+  orderItems    OrderItem[]
+  stockMoves    StockMovement[]
+  reviews       Review[]
+  wishlist      Wishlist[]
+  dropProducts  DropProduct[]
+  purchaseItems PurchaseOrderItem[]
+
+  @@index([category, active])
+  @@index([featured, active])
+  @@index([barcode])
+  @@index([sku])
+  @@index([slug])
+  @@index([status])
+}
+
+model Variant {
+  id        String   @id @default(cuid())
+  productId String
+  size      String
+  color     String
+  qty       Int      @default(0)
+  reserved  Int      @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  product   Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  stockMoves StockMovement[]
+
+  @@unique([productId, size, color])
+  @@index([productId])
+  @@index([qty])
+}
+
+// ============================================
+// DROP (New stuff / collection launch)
+// ============================================
+
+enum DropStatus {
+  DRAFT
+  SCHEDULED
+  LIVE
+  ENDED
+}
+
+model Drop {
+  id           String     @id @default(cuid())
+  name         String
+  nameBn       String?
+  slug         String     @unique
+  description  String?    @db.Text
+  bannerUrl    String?
+  status       DropStatus @default(DRAFT)
+  releaseAt    DateTime
+  endAt        DateTime?
+  isFeatured   Boolean    @default(false)
+  countdownOn  Boolean    @default(true)
+  notifyOn     Boolean    @default(true)
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+
+  products     DropProduct[]
+
+  @@index([status, releaseAt])
+  @@index([slug])
+}
+
+model DropProduct {
+  id        String   @id @default(cuid())
+  dropId    String
+  productId String
+  position  Int      @default(0)
+  createdAt DateTime @default(now())
+
+  drop      Drop     @relation(fields: [dropId], references: [id], onDelete: Cascade)
+  product   Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@unique([dropId, productId])
+  @@index([dropId])
+  @@index([productId])
+}
+// ============================================
+// ORDER (online + offline)
+// ============================================
+
+enum OrderChannel {
+  ONLINE
+  OFFLINE
+}
+
+enum OrderStatus {
+  PLACED
+  CONFIRMED
+  PACKED
+  SHIPPED
+  DELIVERED
+  CANCELLED
+  RETURNED
+}
+
+enum PaymentMethod {
+  COD
+  BKASH
+  NAGAD
+  ROCKET
+  CARD
+  CASH
+}
+
+enum PaymentStatus {
+  PENDING
+  WAITING
+  REVIEW
+  PAID
+  FAILED
+  REFUNDED
+}
+
+model Order {
+  id             String        @id @default(cuid())
+  orderNumber    String        @unique
+  channel        OrderChannel  @default(ONLINE)
+  userId         String?
+  shiftId        String?
+  status         OrderStatus   @default(PLACED)
+
+  customerName   String
+  customerPhone  String
+  customerEmail  String?
+  address        String?       @db.Text
+  district       String?
+  note           String?       @db.Text
+
+  subtotal       Decimal       @db.Decimal(10, 2)
+  discount       Decimal       @default(0) @db.Decimal(10, 2)
+  deliveryFee    Decimal       @default(0) @db.Decimal(10, 2)
+  total          Decimal       @db.Decimal(10, 2)
+  couponCode     String?
+
+  paymentMethod  PaymentMethod
+  paymentStatus  PaymentStatus @default(PENDING)
+  paymentTxId    String?
+
+  courier        String?
+  consignmentId  String?
+  courierStatus  String?
+
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+
+  user           User?         @relation(fields: [userId], references: [id])
+  shift          Shift?        @relation(fields: [shiftId], references: [id])
+  items          OrderItem[]
+  events         OrderEvent[]
+  transactions   Transaction[]
+
+  @@index([status, createdAt])
+  @@index([channel, createdAt])
+  @@index([customerPhone])
+  @@index([orderNumber])
+  @@index([userId])
+  @@index([shiftId])
+}
+
+model OrderItem {
+  id        String   @id @default(cuid())
+  orderId   String
+  productId String
+  name      String
+  size      String
+  color     String
+  qty       Int
+  price     Decimal  @db.Decimal(10, 2)
+  cost      Decimal  @db.Decimal(10, 2)
+
+  order     Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  product   Product  @relation(fields: [productId], references: [id])
+
+  @@index([orderId])
+  @@index([productId])
+}
+
+model OrderEvent {
+  id        String   @id @default(cuid())
+  orderId   String
+  status    String
+  note      String?
+  actor     String?
+  createdAt DateTime @default(now())
+
+  order     Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@index([orderId])
+}
+
+// ============================================
+// STOCK MOVEMENT (full audit log)
+// ============================================
+
+enum StockMoveType {
+  PURCHASE
+  SALE_ONLINE
+  SALE_OFFLINE
+  RETURN
+  DAMAGE
+  ADJUSTMENT
+  TRANSFER
+}
+
+model StockMovement {
+  id         String        @id @default(cuid())
+  productId  String
+  variantId  String?
+  type       StockMoveType
+  qty        Int
+  before     Int
+  after      Int
+  reason     String?
+  refId      String?
+  actorId    String?
+  createdAt  DateTime      @default(now())
+
+  product    Product       @relation(fields: [productId], references: [id], onDelete: Cascade)
+  variant    Variant?      @relation(fields: [variantId], references: [id])
+
+  @@index([productId, createdAt])
+  @@index([variantId])
+  @@index([type, createdAt])
+}
+// ============================================
+// TRANSACTION (COD waiting / cash received)
+// ============================================
+
+enum TransactionType {
+  ONLINE_PAYMENT
+  OFFLINE_CASH
+  COD_RECEIVED
+  REFUND
+  COURIER_CHARGE
+}
+
+enum TransactionStatus {
+  PENDING
+  COMPLETED
+  FAILED
+}
+
+model Transaction {
+  id           String            @id @default(cuid())
+  orderId      String?
+  type         TransactionType
+  status       TransactionStatus @default(PENDING)
+  amount       Decimal           @db.Decimal(10, 2)
+  method       String?
+  reference    String?
+  note         String?           @db.Text
+  confirmedBy  String?
+  confirmedAt  DateTime?
+  createdAt    DateTime          @default(now())
+  updatedAt    DateTime          @updatedAt
+
+  order        Order?            @relation(fields: [orderId], references: [id])
+
+  @@index([type, status])
+  @@index([orderId])
+  @@index([createdAt])
+}
+
+// ============================================
+// EXPENSE (shop costs)
+// ============================================
+
+enum ExpenseCategory {
+  RENT
+  UTILITIES
+  SALARY
+  PACKAGING
+  MARKETING
+  TRANSPORT
+  OTHER
+}
+
+model Expense {
+  id          String          @id @default(cuid())
+  category    ExpenseCategory
+  amount      Decimal         @db.Decimal(10, 2)
+  description String          @db.Text
+  receiptUrl  String?
+  spentAt     DateTime        @default(now())
+  createdBy   String?
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
+
+  @@index([category, spentAt])
+  @@index([spentAt])
+}
+
+// ============================================
+// CASH DRAWER (daily open/close count)
+// ============================================
+
+enum CashDrawerStatus {
+  OPEN
+  CLOSED
+}
+
+model CashDrawer {
+  id            String           @id @default(cuid())
+  userId        String
+  shiftId       String?
+  status        CashDrawerStatus @default(OPEN)
+  openingAmount Decimal          @db.Decimal(10, 2)
+  closingAmount Decimal?         @db.Decimal(10, 2)
+  expectedCash  Decimal?         @db.Decimal(10, 2)
+  difference    Decimal?         @db.Decimal(10, 2)
+  note          String?          @db.Text
+  openedAt      DateTime         @default(now())
+  closedAt      DateTime?
+  createdAt     DateTime         @default(now())
+  updatedAt     DateTime         @updatedAt
+
+  user          User             @relation(fields: [userId], references: [id])
+
+  @@index([userId, status])
+  @@index([openedAt])
+}
+
+// ============================================
+// COUPON
+// ============================================
+
+enum CouponType {
+  PERCENT
+  FIXED
+  SHIPPING
+}
+
+model Coupon {
+  id          String     @id @default(cuid())
+  code        String     @unique
+  type        CouponType
+  value       Decimal    @db.Decimal(10, 2)
+  minSpend    Decimal    @default(0) @db.Decimal(10, 2)
+  maxDiscount Decimal?   @db.Decimal(10, 2)
+  usageLimit  Int?
+  usedCount   Int        @default(0)
+  perUser     Int        @default(1)
+  active      Boolean    @default(true)
+  expiresAt   DateTime?
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+
+  @@index([code, active])
+  @@index([expiresAt])
+}
+
+// ============================================
+// SUPPLIER + PURCHASE ORDER
+// ============================================
+
+model Supplier {
+  id          String              @id @default(cuid())
+  name        String
+  phone       String
+  email       String?
+  address     String?             @db.Text
+  note        String?             @db.Text
+  active      Boolean             @default(true)
+  createdAt   DateTime            @default(now())
+  updatedAt   DateTime            @updatedAt
+
+  purchases   PurchaseOrder[]
+
+  @@index([name])
+  @@index([phone])
+}
+
+enum PurchaseStatus {
+  DRAFT
+  ORDERED
+  PARTIAL
+  RECEIVED
+  CANCELLED
+}
+
+model PurchaseOrder {
+  id           String           @id @default(cuid())
+  poNumber     String           @unique
+  supplierId   String
+  status       PurchaseStatus   @default(DRAFT)
+  subtotal     Decimal          @db.Decimal(10, 2)
+  paid         Decimal          @default(0) @db.Decimal(10, 2)
+  due          Decimal          @db.Decimal(10, 2)
+  note         String?          @db.Text
+  orderedAt    DateTime         @default(now())
+  receivedAt   DateTime?
+  createdBy    String?
+  createdAt    DateTime         @default(now())
+  updatedAt    DateTime         @updatedAt
+
+  supplier     Supplier         @relation(fields: [supplierId], references: [id])
+  items        PurchaseOrderItem[]
+
+  @@index([supplierId])
+  @@index([status])
+  @@index([poNumber])
+}
+
+model PurchaseOrderItem {
+  id          String         @id @default(cuid())
+  purchaseId  String
+  productId   String
+  qty         Int
+  unitCost    Decimal        @db.Decimal(10, 2)
+  total       Decimal        @db.Decimal(10, 2)
+  received    Int            @default(0)
+  createdAt   DateTime       @default(now())
+
+  purchase    PurchaseOrder  @relation(fields: [purchaseId], references: [id], onDelete: Cascade)
+  product     Product        @relation(fields: [productId], references: [id])
+
+  @@index([purchaseId])
+  @@index([productId])
+}
+// ============================================
+// REVIEW
+// ============================================
+
+model Review {
+  id         String   @id @default(cuid())
+  productId  String
+  userId     String?
+  name       String
+  rating     Int
+  comment    String?  @db.Text
+  images     String[]
+  approved   Boolean  @default(false)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  product    Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  user       User?    @relation(fields: [userId], references: [id])
+
+  @@index([productId, approved])
+  @@index([userId])
+  @@index([rating])
+}
+
+// ============================================
+// WISHLIST
+// ============================================
+
+model Wishlist {
+  id         String   @id @default(cuid())
+  userId     String
+  productId  String
+  createdAt  DateTime @default(now())
+
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  product    Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, productId])
+  @@index([userId])
+  @@index([productId])
+}
+
+// ============================================
+// NOTIFICATION
+// ============================================
+
+enum NotificationType {
+  ORDER
+  STOCK
+  COURIER
+  PAYMENT
+  SYSTEM
+  DROP
+  STAFF_REPORT
+}
+
+model Notification {
+  id         String           @id @default(cuid())
+  userId     String?
+  type       NotificationType
+  title      String
+  body       String           @db.Text
+  link       String?
+  read       Boolean          @default(false)
+  createdAt  DateTime         @default(now())
+
+  user       User?            @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, read])
+  @@index([type, createdAt])
+}
+
+// ============================================
+// STAFF REPORT (issue reporting)
+// ============================================
+
+enum ReportType {
+  WRONG_PRODUCT
+  DAMAGE
+  MISSING
+  PRICE_ERROR
+  CUSTOMER_ISSUE
+  OTHER
+}
+
+enum ReportStatus {
+  OPEN
+  IN_REVIEW
+  RESOLVED
+  REJECTED
+}
+
+model StaffReport {
+  id          String       @id @default(cuid())
+  reportedBy  String
+  resolvedBy  String?
+  type        ReportType
+  status      ReportStatus @default(OPEN)
+  title       String
+  description String       @db.Text
+  productId   String?
+  orderId     String?
+  proofUrl    String?
+  adminNote   String?      @db.Text
+  createdAt   DateTime     @default(now())
+  resolvedAt  DateTime?
+  updatedAt   DateTime     @updatedAt
+
+  reporter    User         @relation("ReportedBy", fields: [reportedBy], references: [id])
+  resolver    User?        @relation("ResolvedBy", fields: [resolvedBy], references: [id])
+
+  @@index([reportedBy])
+  @@index([status, createdAt])
+  @@index([type])
+}
+
+// ============================================
+// AUDIT LOG (every admin/staff action)
+// ============================================
+
+model AuditLog {
+  id         String   @id @default(cuid())
+  userId     String?
+  actor      String
+  action     String
+  detail     String?  @db.Text
+  ip         String?
+  userAgent  String?
+  createdAt  DateTime @default(now())
+
+  user       User?    @relation(fields: [userId], references: [id])
+
+  @@index([userId, createdAt])
+  @@index([action, createdAt])
+  @@index([createdAt])
+}
+
+// ============================================
+// SETTINGS (key-value store)
+// ============================================
+
+model Setting {
+  key        String   @id
+  value      Json
+  updatedAt  DateTime @updatedAt
+}
