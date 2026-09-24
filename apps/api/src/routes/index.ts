@@ -2,6 +2,7 @@ import type { FastifyInstance } from 'fastify';
 import { authRoutes } from './auth.js';
 import { productRoutes } from './products.js';
 import { dropRoutes } from './drops.js';
+import { orderRoutes } from './orders.js';
 
 export async function registerRoutes(app: FastifyInstance) {
   // Health check
@@ -12,16 +13,8 @@ export async function registerRoutes(app: FastifyInstance) {
     env: process.env.NODE_ENV || 'development',
   }));
 
-  // Auth routes
   await app.register(authRoutes, { prefix: '/api/auth' });
-
-  // Product routes
   await app.register(productRoutes, { prefix: '/api/products' });
-
-  // Drop routes
   await app.register(dropRoutes, { prefix: '/api/drops' });
-
-  // More routes will be added here:
-  // await app.register(orderRoutes, { prefix: '/api/orders' });
-  // await app.register(stockRoutes, { prefix: '/api/stock' });
+  await app.register(orderRoutes, { prefix: '/api/orders' });
 }
