@@ -4,6 +4,7 @@ import { productRoutes } from './products.js';
 import { dropRoutes } from './drops.js';
 import { orderRoutes } from './orders.js';
 import { stockRoutes } from './stock.js';
+import { staffRoutes } from './staff.js';
 
 export async function registerRoutes(app: FastifyInstance) {
   app.get('/health', async () => ({
@@ -18,4 +19,5 @@ export async function registerRoutes(app: FastifyInstance) {
   await app.register(dropRoutes, { prefix: '/api/drops' });
   await app.register(orderRoutes, { prefix: '/api/orders' });
   await app.register(stockRoutes, { prefix: '/api/stock' });
+  await app.register(staffRoutes, { prefix: '/api/staff' });
 }
