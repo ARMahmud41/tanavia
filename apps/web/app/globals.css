@@ -1,0 +1,94 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --wine: #7B1C32;
+  --wine-dark: #5C1425;
+  --wine-light: #A33049;
+  --cream: #FBF7F2;
+  --sand: #F4EEE5;
+  --ink: #2A1E21;
+  --muted: #7A6B6E;
+  --line: #EADFD2;
+  --leaf: #2F6B4F;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  background: var(--cream);
+  color: var(--ink);
+  font-family: 'Inter', 'Hind Siliguri', system-ui, sans-serif;
+  font-size: 15px;
+  line-height: 1.55;
+  -webkit-font-smoothing: antialiased;
+}
+
+img {
+  max-width: 100%;
+  display: block;
+}
+
+button {
+  cursor: pointer;
+  background: none;
+  border: 0;
+  font: inherit;
+  color: inherit;
+}
+
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
+input,
+select,
+textarea {
+  font: inherit;
+  color: inherit;
+}
+
+/* Utility classes */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  background: var(--wine);
+  color: #fff;
+  border-radius: 30px;
+  padding: 11px 24px;
+  font-weight: 600;
+  font-size: 14.5px;
+  transition: background 0.15s;
+}
+
+.btn:hover {
+  background: var(--wine-dark);
+}
+
+.btn-ghost {
+  background: transparent;
+  color: var(--wine);
+  border: 1.5px solid var(--wine);
+}
+
+.btn-ghost:hover {
+  background: var(--wine);
+  color: #fff;
+}
+
+.container-wrap {
+  max-width: 1180px;
+  margin: 0 auto;
+  padding: 0 18px;
+}
