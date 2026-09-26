@@ -1,3 +1,5 @@
+import { CartIcon } from '@/components/CartIcon';
+
 export default function ShopLayout({
   children,
 }: {
@@ -10,13 +12,11 @@ export default function ShopLayout({
           <a href="/" className="font-serif text-2xl font-semibold text-wine">
             TANAVIA
           </a>
-          <nav className="flex gap-6 text-sm">
+          <nav className="flex gap-6 text-sm items-center">
             <a href="/products" className="hover:text-wine">
               Shop
             </a>
-            <a href="/cart" className="hover:text-wine">
-              Cart
-            </a>
+            <CartIcon />
             <a href="/login" className="hover:text-wine">
               Login
             </a>

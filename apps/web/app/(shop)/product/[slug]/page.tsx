@@ -2,6 +2,7 @@ import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { api } from '@/lib/api';
 import { tk, sellPrice } from '@/lib/format';
+import { AddToCartButton } from '@/components/AddToCartButton';
 
 interface Variant {
   id: string;
@@ -53,10 +54,6 @@ export default async function ProductDetailPage({
 
   const finalPrice = sellPrice(product.price, product.discount);
   const hasDiscount = product.discount > 0;
-  const totalStock = product.variants.reduce((s, v) => s + v.qty, 0);
-
-  const colors = [...new Set(product.variants.map((v) => v.color))];
-  const sizes = [...new Set(product.variants.map((v) => v.size))];
 
   return (
     <div className="container-wrap py-10">
@@ -139,62 +136,7 @@ export default async function ProductDetailPage({
             </p>
           )}
 
-          {colors.length > 0 && (
-            <div className="mb-5">
-              <div className="text-sm font-medium mb-2">
-                Color: <span className="text-muted">{colors[0]}</span>
-              </div>
-              <div className="flex gap-2 flex-wrap">
-                {colors.map((color) => (
-                  <button
-                    key={color}
-                    className="px-3 py-1.5 border border-line rounded text-sm hover:border-wine transition"
-                  >
-                    {color}
-                  </button>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {sizes.length > 0 && (
-            <div className="mb-6">
-              <div className="text-sm font-medium mb-2">Size</div>
-              <div className="flex gap-2 flex-wrap">
-                {sizes.map((size) => (
-                  <button
-                    key={size}
-                    className="px-4 py-2 border border-line rounded text-sm hover:border-wine transition"
-                  >
-                    {size}
-                  </button>
-                ))}
-              </div>
-            </div>
-          )}
-
-          <div className="text-sm mb-6">
-            {totalStock > 0 ? (
-              <span className="text-leaf">
-                ✓ In stock ({totalStock} available)
-              </span>
-            ) : (
-              <span className="text-wine">✗ Stock out</span>
-            )}
-            {product.tryable && (
-              <span className="ml-4 text-muted">• Try Room available</span>
-            )}
-          </div>
-
-          <div className="flex gap-3 mb-6">
-            <button
-              className="btn flex-1 justify-center"
-              disabled={totalStock === 0}
-            >
-              Add to Cart
-            </button>
-            <button className="btn btn-ghost">♡</button>
-          </div>
+          <AddToCartButton product={product} />
 
           <div className="text-xs text-muted border-t border-line pt-4">
             SKU: {product.sku}
