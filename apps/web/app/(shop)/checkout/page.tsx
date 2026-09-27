@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { getCart, clearCart, type CartItem } from '@/lib/cart';
 import { api } from '@/lib/api';
@@ -14,12 +14,18 @@ const DISTRICTS = [
   'Feni', 'Brahmanbaria', 'Tangail', 'Kushtia', 'Faridpur',
 ];
 
-const PAYMENT_METHODS = [
-  { value: 'COD', label: 'Cash on Delivery', desc: 'Pay when you receive the order' },
-  { value: 'BKASH', label: 'bKash', desc: 'Send money and enter Transaction ID' },
-  { value: 'NAGAD', label: 'Nagad', desc: 'Send money and enter Transaction ID' },
-  { value: 'ROCKET', label: 'Rocket', desc: 'Send money and enter Transaction ID' },
-  { value: 'CARD', label: 'Card (Visa / Mastercard)', desc: 'Secure payment via SSLCommerz' },
+interface PaymentOption {
+  value: string;
+  label: string;
+  logo: string;
+}
+
+const PAYMENT_METHODS: PaymentOption[] = [
+  { value: 'COD', label: 'COD', logo: '/logos/cod.png' },
+  { value: 'BKASH', label: 'bKash', logo: '/logos/bkash.png' },
+  { value: 'NAGAD', label: 'Nagad', logo: '/logos/nagad.png' },
+  { value: 'ROCKET', label: 'Rocket', logo: '/logos/rocket.png' },
+  { value: 'CARD', label: 'Card', logo: '/logos/card.png' },
 ];
 
 interface FormData {
@@ -31,6 +37,17 @@ interface FormData {
   note: string;
   paymentMethod: string;
   paymentTxId: string;
+}
+
+function SectionHeader({ step, title }: { step: number; title: string }) {
+  return (
+    <div className="bg-[#0F2A5C] text-white px-4 py-2.5 rounded-t-lg flex items-center gap-2.5 -mx-5 -mt-5 mb-5">
+      <div className="w-5 h-5 rounded-full bg-white text-[#0F2A5C] flex items-center justify-center text-[11px] font-bold">
+        {step}
+      </div>
+      <span className="text-sm font-semibold tracking-wide">{title}</span>
+    </div>
+  );
 }
 
 export default function CheckoutPage() {
@@ -50,6 +67,19 @@ export default function CheckoutPage() {
     paymentTxId: '',
   });
 
+  const txIdRef = useRef<HTMLInputElement>(null);
+  const needsTxId = ['BKASH', 'NAGAD', 'ROCKET'].includes(form.paymentMethod);
+
+  useEffect(() => {
+    if (needsTxId && txIdRef.current) {
+      const timer = setTimeout(() => {
+        txIdRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        txIdRef.current?.focus({ preventScroll: true });
+      }, 150);
+      return () => clearTimeout(timer);
+    }
+  }, [form.paymentMethod, needsTxId]);
+
   useEffect(() => {
     setMounted(true);
     const cart = getCart();
@@ -68,9 +98,7 @@ export default function CheckoutPage() {
     );
   }
 
-  if (items.length === 0) {
-    return null;
-  }
+  if (items.length === 0) return null;
 
   const subtotal = items.reduce((sum, item) => {
     const finalPrice = Math.round(item.price * (1 - item.discount / 100));
@@ -97,7 +125,6 @@ export default function CheckoutPage() {
       setError('Address must be at least 10 characters');
       return;
     }
-    const needsTxId = ['BKASH', 'NAGAD', 'ROCKET'].includes(form.paymentMethod);
     if (needsTxId && form.paymentTxId.trim().length < 4) {
       setError('Please enter the Transaction ID (at least 4 characters)');
       return;
@@ -123,14 +150,8 @@ export default function CheckoutPage() {
         })),
       };
 
-      const res = await api.post<{ id: string; orderNumber: string }>(
-        '/api/orders',
-        payload
-      );
-
-      if (!res.data) {
-        throw new Error('Order placement failed');
-      }
+      const res = await api.post<{ id: string; orderNumber: string }>('/api/orders', payload);
+      if (!res.data) throw new Error('Order placement failed');
 
       clearCart();
 
@@ -140,282 +161,288 @@ export default function CheckoutPage() {
         router.push(`/order-success/${res.data.orderNumber}`);
       }
     } catch (err: unknown) {
-      const message =
-        err instanceof Error ? err.message : 'Something went wrong';
+      const message = err instanceof Error ? err.message : 'Something went wrong';
       setError(message);
       setSubmitting(false);
     }
   }
 
-  const needsTxId = ['BKASH', 'NAGAD', 'ROCKET'].includes(form.paymentMethod);
+  const inputClass =
+    'w-full bg-[#F1F3F6] border border-transparent rounded-lg px-4 py-3 text-ink text-sm placeholder:text-[#8A8F98] focus:outline-none focus:bg-white focus:border-[#0F2A5C] transition';
 
   return (
-    <div className="container-wrap py-10">
-      <h1 className="font-serif text-4xl font-semibold text-ink mb-2">
-        Checkout
-      </h1>
-      <p className="text-muted text-sm mb-8">
-        Fill in your delivery details to place the order
-      </p>
+    <div className="bg-[#F5F6F8] min-h-screen">
+      <div className="container-wrap py-8 md:py-12">
+        {/* Header */}
+        <h1 className="font-serif text-3xl md:text-4xl font-semibold text-[#0F2A5C] mb-8">
+          Checkout
+        </h1>
 
-      <form onSubmit={handleSubmit}>
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-          {/* Left — form */}
-          <div className="lg:col-span-2 space-y-6">
-            {/* Customer info */}
-            <section className="bg-white border border-line rounded p-6">
-              <h2 className="font-serif text-xl font-semibold mb-4">
-                Contact Information
-              </h2>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div>
-                  <label className="text-sm font-medium mb-1 block">
-                    Full Name *
-                  </label>
-                  <input
-                    type="text"
-                    required
-                    value={form.customerName}
-                    onChange={(e) => update('customerName', e.target.value)}
-                    placeholder="Your full name"
-                    className="w-full border border-line rounded px-3 py-2 focus:outline-none focus:border-wine"
-                  />
-                </div>
-                <div>
-                  <label className="text-sm font-medium mb-1 block">
-                    Mobile Number *
-                  </label>
-                  <input
-                    type="text"
-                    required
-                    value={form.customerPhone}
-                    onChange={(e) => update('customerPhone', e.target.value)}
-                    placeholder="01712345678"
-                    className="w-full border border-line rounded px-3 py-2 focus:outline-none focus:border-wine"
-                  />
-                </div>
-                <div className="md:col-span-2">
-                  <label className="text-sm font-medium mb-1 block">
-                    Email (optional)
-                  </label>
-                  <input
-                    type="email"
-                    value={form.customerEmail}
-                    onChange={(e) => update('customerEmail', e.target.value)}
-                    placeholder="you@example.com"
-                    className="w-full border border-line rounded px-3 py-2 focus:outline-none focus:border-wine"
-                  />
-                </div>
-              </div>
-            </section>
+        <form onSubmit={handleSubmit}>
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            {/* Left — form */}
+            <div className="lg:col-span-2 space-y-5">
+              {/* Step 1 — Contact */}
+              <section className="bg-white rounded-lg shadow-[0_2px_10px_rgba(15,42,92,0.06)] p-5">
+                <SectionHeader step={1} title="Contact" />
 
-            {/* Delivery */}
-            <section className="bg-white border border-line rounded p-6">
-              <h2 className="font-serif text-xl font-semibold mb-4">
-                Delivery Address
-              </h2>
-              <div className="space-y-4">
-                <div>
-                  <label className="text-sm font-medium mb-1 block">
-                    Full Address *
-                  </label>
-                  <textarea
-                    required
-                    rows={3}
-                    value={form.address}
-                    onChange={(e) => update('address', e.target.value)}
-                    placeholder="House, Road, Area, Thana"
-                    className="w-full border border-line rounded px-3 py-2 focus:outline-none focus:border-wine"
-                  />
+                <div className="space-y-3">
+                  <div className="relative">
+                    <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-[#8A8F98] text-base">
+                      👤
+                    </span>
+                    <input
+                      type="text"
+                      required
+                      value={form.customerName}
+                      onChange={(e) => update('customerName', e.target.value)}
+                      placeholder="Name"
+                      className={inputClass + ' pl-11'}
+                    />
+                  </div>
+                  <div className="relative">
+                    <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-[#8A8F98] text-base">
+                      📞
+                    </span>
+                    <input
+                      type="text"
+                      required
+                      value={form.customerPhone}
+                      onChange={(e) => update('customerPhone', e.target.value)}
+                      placeholder="Mobile number"
+                      className={inputClass + ' pl-11'}
+                    />
+                  </div>
+                  <div className="relative">
+                    <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-[#8A8F98] text-base">
+                      ✉️
+                    </span>
+                    <input
+                      type="email"
+                      value={form.customerEmail}
+                      onChange={(e) => update('customerEmail', e.target.value)}
+                      placeholder="Email address"
+                      className={inputClass + ' pl-11'}
+                    />
+                  </div>
                 </div>
-                <div>
-                  <label className="text-sm font-medium mb-1 block">
-                    District *
-                  </label>
-                  <select
-                    value={form.district}
-                    onChange={(e) => update('district', e.target.value)}
-                    className="w-full border border-line rounded px-3 py-2 focus:outline-none focus:border-wine bg-white"
-                  >
-                    {DISTRICTS.map((d) => (
-                      <option key={d} value={d}>
-                        {d}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-                <div>
-                  <label className="text-sm font-medium mb-1 block">
-                    Note (optional)
-                  </label>
-                  <textarea
-                    rows={2}
-                    value={form.note}
-                    onChange={(e) => update('note', e.target.value)}
-                    placeholder="Special instructions for delivery"
-                    className="w-full border border-line rounded px-3 py-2 focus:outline-none focus:border-wine"
-                  />
-                </div>
-              </div>
-            </section>
+              </section>
 
-            {/* Payment */}
-            <section className="bg-white border border-line rounded p-6">
-              <h2 className="font-serif text-xl font-semibold mb-4">
-                Payment Method
-              </h2>
-              <div className="space-y-3">
-                {PAYMENT_METHODS.map((pm) => (
-                  <label
-                    key={pm.value}
-                    className={`block border rounded p-4 cursor-pointer transition ${
-                      form.paymentMethod === pm.value
-                        ? 'border-wine bg-wine/5'
-                        : 'border-line hover:border-wine'
-                    }`}
-                  >
-                    <div className="flex items-start gap-3">
-                      <input
-                        type="radio"
-                        name="paymentMethod"
-                        value={pm.value}
-                        checked={form.paymentMethod === pm.value}
-                        onChange={(e) =>
-                          update('paymentMethod', e.target.value)
-                        }
-                        className="mt-1"
-                      />
-                      <div className="flex-1">
-                        <div className="font-medium">{pm.label}</div>
-                        <div className="text-sm text-muted">{pm.desc}</div>
-                      </div>
+              {/* Step 2 — Delivery */}
+              <section className="bg-white rounded-lg shadow-[0_2px_10px_rgba(15,42,92,0.06)] p-5">
+                <SectionHeader step={2} title="Delivery" />
+
+                <div className="space-y-3">
+                  <div className="relative">
+                    <span className="absolute left-3.5 top-3.5 text-[#8A8F98] text-base">
+                      📍
+                    </span>
+                    <textarea
+                      required
+                      rows={2}
+                      value={form.address}
+                      onChange={(e) => update('address', e.target.value)}
+                      placeholder="Full Address"
+                      className={inputClass + ' pl-11 resize-none'}
+                    />
+                  </div>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    <div className="relative">
+                      <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-[#8A8F98] text-sm">
+                        🏙
+                      </span>
+                      <select
+                        value={form.district}
+                        onChange={(e) => update('district', e.target.value)}
+                        className={inputClass + ' pl-11 appearance-none cursor-pointer'}
+                      >
+                        {DISTRICTS.map((d) => (
+                          <option key={d} value={d}>
+                            {d}
+                          </option>
+                        ))}
+                      </select>
                     </div>
-                  </label>
-                ))}
-              </div>
-
-              {needsTxId && (
-                <div className="mt-4 bg-sand border border-line rounded p-4">
-                  <label className="text-sm font-medium mb-1 block">
-                    Transaction ID *
-                  </label>
-                  <input
-                    type="text"
-                    required
-                    value={form.paymentTxId}
-                    onChange={(e) => update('paymentTxId', e.target.value)}
-                    placeholder="e.g. 8H4K9L2M"
-                    className="w-full border border-line rounded px-3 py-2 focus:outline-none focus:border-wine"
-                  />
-                  <p className="text-xs text-muted mt-2">
-                    Send the money first, then enter the Transaction ID here.
-                    Our team will verify it.
-                  </p>
-                </div>
-              )}
-
-              {form.paymentMethod === 'CARD' && (
-                <div className="mt-4 bg-leaf/5 border border-leaf/20 rounded p-4">
-                  <div className="flex items-start gap-2">
-                    <span className="text-leaf text-lg">🔒</span>
-                    <div className="text-sm">
-                      <div className="font-medium text-leaf mb-1">
-                        Secure Card Payment
-                      </div>
-                      <div className="text-muted text-xs">
-                        After placing the order, you will be redirected to
-                        SSLCommerz&apos;s secure payment page. Visa,
-                        Mastercard, and American Express are accepted.
-                      </div>
+                    <div className="relative">
+                      <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-[#8A8F98] text-sm">
+                        📝
+                      </span>
+                      <input
+                        type="text"
+                        value={form.note}
+                        onChange={(e) => update('note', e.target.value)}
+                        placeholder="Note (optional)"
+                        className={inputClass + ' pl-11'}
+                      />
                     </div>
                   </div>
                 </div>
-              )}
-            </section>
-          </div>
+              </section>
 
-          {/* Right — order summary */}
-          <div className="lg:col-span-1">
-            <div className="bg-white border border-line rounded p-6 sticky top-24">
-              <h2 className="font-serif text-xl font-semibold mb-4">
-                Order Summary
-              </h2>
+              {/* Step 3 — Payment */}
+              <section className="bg-white rounded-lg shadow-[0_2px_10px_rgba(15,42,92,0.06)] p-5">
+                <SectionHeader step={3} title="Payment" />
 
-              <div className="space-y-3 mb-4 max-h-64 overflow-y-auto">
-                {items.map((item) => {
-                  const finalPrice = Math.round(
-                    item.price * (1 - item.discount / 100)
-                  );
-                  return (
-                    <div
-                      key={item.variantId}
-                      className="flex gap-3 text-sm"
-                    >
-                      <div className="w-12 h-16 bg-sand rounded overflow-hidden flex-shrink-0">
-                        {item.image ? (
-                          // eslint-disable-next-line @next/next/no-img-element
+                {/* Payment grid — 3 columns */}
+                <div className="grid grid-cols-3 gap-3">
+                  {PAYMENT_METHODS.map((pm) => {
+                    const selected = form.paymentMethod === pm.value;
+                    return (
+                      <label
+                        key={pm.value}
+                        className={`cursor-pointer rounded-lg border-2 p-3 flex flex-col items-center gap-2 transition-all ${
+                          selected
+                            ? 'border-[#0F2A5C] bg-[#0F2A5C]/[0.04]'
+                            : 'border-[#E3E6EB] bg-white hover:border-[#0F2A5C]/40'
+                        }`}
+                      >
+                        <input
+                          type="radio"
+                          name="paymentMethod"
+                          value={pm.value}
+                          checked={selected}
+                          onChange={(e) => update('paymentMethod', e.target.value)}
+                          className="sr-only"
+                        />
+                        <div className="w-14 h-14 rounded-md bg-white border border-[#E3E6EB] flex items-center justify-center overflow-hidden p-1.5">
+                          {/* eslint-disable-next-line @next/next/no-img-element */}
                           <img
-                            src={item.image}
-                            alt={item.name}
-                            className="w-full h-full object-cover"
+                            src={pm.logo}
+                            alt={pm.label}
+                            className="max-w-full max-h-full object-contain"
                           />
-                        ) : null}
-                      </div>
-                      <div className="flex-1">
-                        <div className="line-clamp-1">{item.name}</div>
-                        <div className="text-xs text-muted">
-                          {item.color} • {item.size} • × {item.qty}
                         </div>
-                        <div className="text-wine font-medium">
-                          {tk(finalPrice * item.qty)}
-                        </div>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-
-              <div className="border-t border-line pt-4">
-                <div className="flex justify-between items-baseline mb-2">
-                  <span className="text-muted text-sm">Subtotal</span>
-                  <span>{tk(subtotal)}</span>
+                        <span
+                          className={`text-xs font-medium ${
+                            selected ? 'text-[#0F2A5C]' : 'text-[#5A6270]'
+                          }`}
+                        >
+                          {pm.label}
+                        </span>
+                      </label>
+                    );
+                  })}
                 </div>
-                <div className="flex justify-between items-baseline">
-                  <span className="font-semibold">Total</span>
-                  <span className="text-wine font-semibold text-2xl">
-                    {tk(subtotal)}
+
+                {needsTxId && (
+                  <div className="mt-4 bg-[#F1F3F6] rounded-lg p-4">
+                    <label className="text-sm font-medium mb-2 block text-[#0F2A5C]">
+                      Transaction ID <span className="text-red-500">*</span>
+                    </label>
+                    <input
+                      ref={txIdRef}
+                      type="text"
+                      required
+                      value={form.paymentTxId}
+                      onChange={(e) => update('paymentTxId', e.target.value)}
+                      placeholder="e.g. 8H4K9L2M"
+                      className="w-full bg-white border border-[#E3E6EB] rounded-lg px-4 py-2.5 text-sm focus:outline-none focus:border-[#0F2A5C] transition"
+                    />
+                    <p className="text-xs text-[#8A8F98] mt-2">
+                      Send the money first, then enter the Transaction ID here.
+                    </p>
+                  </div>
+                )}
+
+                {form.paymentMethod === 'CARD' && (
+                  <div className="mt-4 bg-[#F1F3F6] rounded-lg p-4 flex items-start gap-3">
+                    <div className="w-8 h-8 rounded-full bg-[#0F2A5C]/10 flex items-center justify-center flex-shrink-0 text-[#0F2A5C] text-sm">
+                      🔒
+                    </div>
+                    <div className="text-xs text-[#5A6270] leading-relaxed">
+                      <div className="font-semibold text-[#0F2A5C] mb-1 text-sm">
+                        Secure Card Payment
+                      </div>
+                      After placing the order, you will be redirected to
+                      SSLCommerz&apos;s secure payment page. Visa, Mastercard,
+                      and American Express are accepted.
+                    </div>
+                  </div>
+                )}
+              </section>
+            </div>
+
+            {/* Right — Order Summary */}
+            <div className="lg:col-span-1">
+              <div className="bg-white rounded-lg shadow-[0_2px_10px_rgba(15,42,92,0.06)] overflow-hidden lg:sticky lg:top-24">
+                {/* Summary header */}
+                <div className="bg-[#0F2A5C] text-white px-4 py-2.5">
+                  <span className="text-sm font-semibold tracking-wide">
+                    Order Summary
                   </span>
                 </div>
-              </div>
 
-              {error && (
-                <div className="mt-4 text-sm text-wine bg-wine/10 border border-wine/20 rounded px-3 py-2">
-                  {error}
+                <div className="p-5">
+                  <div className="space-y-3 mb-4 max-h-64 overflow-y-auto">
+                    {items.map((item) => {
+                      const finalPrice = Math.round(
+                        item.price * (1 - item.discount / 100)
+                      );
+                      return (
+                        <div key={item.variantId} className="flex gap-3 text-sm">
+                          <div className="w-12 h-16 bg-[#F1F3F6] rounded-md overflow-hidden flex-shrink-0">
+                            {item.image ? (
+                              // eslint-disable-next-line @next/next/no-img-element
+                              <img
+                                src={item.image}
+                                alt={item.name}
+                                className="w-full h-full object-cover"
+                              />
+                            ) : (
+                              <div className="w-full h-full flex items-center justify-center text-[#8A8F98] text-[10px]">
+                                No img
+                              </div>
+                            )}
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <div className="font-medium text-ink text-sm line-clamp-1">
+                              {item.name}
+                            </div>
+                            <div className="text-xs text-[#8A8F98] mt-0.5">
+                              {item.color} • {item.size}
+                            </div>
+                            <div className="text-[#0F2A5C] font-semibold mt-1 text-sm">
+                              {tk(finalPrice * item.qty)}
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+
+                  <div className="border-t border-[#E3E6EB] pt-3 flex justify-between items-baseline">
+                    <span className="text-sm text-[#5A6270]">Total</span>
+                    <span className="font-semibold text-lg text-[#0F2A5C]">
+                      {tk(subtotal)}
+                    </span>
+                  </div>
+
+                  {error && (
+                    <div className="mt-4 text-xs text-red-700 bg-red-50 border border-red-200 rounded-lg px-3 py-2">
+                      {error}
+                    </div>
+                  )}
+
+                  <button
+                    type="submit"
+                    disabled={submitting}
+                    className="mt-5 w-full bg-[#0F2A5C] hover:bg-[#0A1F45] text-white rounded-lg py-3 font-semibold text-sm transition disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    {submitting ? 'Placing order...' : 'Place Order'}
+                  </button>
+
+                  <Link
+                    href="/cart"
+                    className="block text-center text-xs text-[#8A8F98] hover:text-[#0F2A5C] mt-3"
+                  >
+                    ← Back to Cart
+                  </Link>
                 </div>
-              )}
-
-              <button
-                type="submit"
-                disabled={submitting}
-                className="btn w-full justify-center mt-6 disabled:opacity-50"
-              >
-                {submitting
-                  ? 'Placing order...'
-                  : form.paymentMethod === 'CARD'
-                  ? 'Place Order & Pay →'
-                  : 'Place Order'}
-              </button>
-
-              <Link
-                href="/cart"
-                className="block text-center text-sm text-muted hover:text-wine mt-3"
-              >
-                ← Back to Cart
-              </Link>
+              </div>
             </div>
           </div>
-        </div>
-      </form>
+        </form>
+      </div>
     </div>
   );
 }
