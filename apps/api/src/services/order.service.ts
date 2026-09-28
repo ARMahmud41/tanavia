@@ -63,6 +63,14 @@ const ORDER_ITEM_SELECT = {
   qty: true,
   price: true,
   cost: true,
+  product: {
+    select: {
+      id: true,
+      name: true,
+      slug: true,
+      images: true,
+    },
+  },
 };
 
 const ORDER_SELECT = {
@@ -688,15 +696,7 @@ export class OrderService {
         courierStatus: true,
         createdAt: true,
         updatedAt: true,
-        items: {
-          select: {
-            name: true,
-            size: true,
-            color: true,
-            qty: true,
-            price: true,
-          },
-        },
+        items: { select: ORDER_ITEM_SELECT },
         events: {
           orderBy: { createdAt: 'asc' },
         },

@@ -22,13 +22,30 @@ interface Props {
     images: string[];
     variants: Variant[];
   };
+  externalColor?: string;
+  onColorChange?: (color: string) => void;
 }
 
-export function AddToCartButton({ product }: Props) {
+export function AddToCartButton({
+  product,
+  externalColor,
+  onColorChange,
+}: Props) {
   const router = useRouter();
-  const [selectedColor, setSelectedColor] = useState<string>(
+  const [internalColor, setInternalColor] = useState<string>(
     product.variants[0]?.color || ''
   );
+
+  const selectedColor = externalColor ?? internalColor;
+
+  function handleColorChange(color: string) {
+    if (onColorChange) {
+      onColorChange(color);
+    } else {
+      setInternalColor(color);
+    }
+  }
+
   const [selectedSize, setSelectedSize] = useState<string>('');
   const [added, setAdded] = useState(false);
   const [error, setError] = useState('');
@@ -125,7 +142,7 @@ export function AddToCartButton({ product }: Props) {
                 key={color}
                 type="button"
                 onClick={() => {
-                  setSelectedColor(color);
+                  handleColorChange(color);
                   setSelectedSize('');
                 }}
                 className={`px-3 py-1.5 border rounded text-sm transition ${

@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { api, ApiError } from '@/lib/api';
 import { getToken } from '@/lib/auth';
 import { uploadImages } from '@/lib/upload';
@@ -15,8 +15,37 @@ interface Variant {
 
 const CATEGORIES = ['Men', 'Women', 'Kids', 'Accessories'];
 const SHAPES = ['shirt', 'pant', 'panjabi', 'saree', 'kurti', 'dress', 'shoe', 'bag', 'other'];
-const ALL_SIZES = ['XS', 'S', 'M', 'L', 'XL', 'XXL', 'Free'];
-const ALL_COLORS = ['Black', 'White', 'Navy', 'Red', 'Blue', 'Green', 'Grey', 'Beige', 'Maroon', 'Yellow'];
+
+// ============================================
+// Size presets by shape
+// ============================================
+const SIZE_PRESETS: Record<string, string[]> = {
+  shirt: ['XS', 'S', 'M', 'L', 'XL', 'XXL'],
+  pant: ['28', '30', '32', '34', '36', '38', '40'],
+  shoe: ['38', '39', '40', '41', '42', '43', '44'],
+  bag: ['Small', 'Medium', 'Large'],
+  saree: ['Free Size'],
+  panjabi: ['S', 'M', 'L', 'XL', 'XXL'],
+  kurti: ['S', 'M', 'L', 'XL', 'XXL'],
+  dress: ['S', 'M', 'L', 'XL'],
+  other: ['XS', 'S', 'M', 'L', 'XL', 'XXL', 'Free Size'],
+};
+
+// ============================================
+// Color presets
+// ============================================
+const DEFAULT_COLORS = [
+  'Black',
+  'White',
+  'Navy',
+  'Red',
+  'Blue',
+  'Green',
+  'Grey',
+  'Beige',
+  'Maroon',
+  'Yellow',
+];
 
 const COLOR_MAP: Record<string, string> = {
   Black: '#000000',
@@ -60,9 +89,18 @@ export default function AddProductPage() {
   const [tryable, setTryable] = useState(false);
 
   // Variant selection
-  const [selectedSizes, setSelectedSizes] = useState<string[]>(['M', 'L', 'XL']);
+  const [selectedSizes, setSelectedSizes] = useState<string[]>([]);
   const [selectedColors, setSelectedColors] = useState<string[]>(['Black', 'White']);
   const [stock, setStock] = useState<Record<string, number | ''>>({});
+
+  // Custom color add
+  const [customColorInput, setCustomColorInput] = useState('');
+  const [customColorHex, setCustomColorHex] = useState('#000000');
+  const [showAddColor, setShowAddColor] = useState(false);
+
+  // Custom size add
+  const [customSizeInput, setCustomSizeInput] = useState('');
+  const [showAddSize, setShowAddSize] = useState(false);
 
   // ── Profit calculations ──
   const priceNum = Number(price) || 0;
@@ -71,6 +109,15 @@ export default function AddProductPage() {
   const customerPays = Math.round(priceNum * (1 - discountNum / 100));
   const profitPerUnit = customerPays - buyingNum;
   const marginPct = customerPays > 0 ? Math.round((profitPerUnit / customerPays) * 100) : 0;
+
+  // Auto-reset sizes when shape changes
+  useEffect(() => {
+    const preset = SIZE_PRESETS[shape] || SIZE_PRESETS.other;
+    const mid = Math.floor(preset.length / 2);
+    const defaults = preset.slice(Math.max(0, mid - 1), mid + 2);
+    setSelectedSizes(defaults);
+    setStock({});
+  }, [shape]);
 
   function toggleSize(s: string) {
     setSelectedSizes((prev) =>
@@ -82,6 +129,45 @@ export default function AddProductPage() {
     setSelectedColors((prev) =>
       prev.includes(c) ? prev.filter((x) => x !== c) : [...prev, c]
     );
+  }
+
+  function handleAddCustomSize() {
+    const input = customSizeInput.trim();
+    if (!input) return;
+
+    const newSizes = input
+      .split(',')
+      .map((s) => s.trim())
+      .filter(Boolean);
+
+    if (newSizes.length === 0) return;
+
+    setSelectedSizes((prev) => {
+      const merged = [...prev];
+      for (const sz of newSizes) {
+        if (!merged.includes(sz)) merged.push(sz);
+      }
+      return merged;
+    });
+
+    setCustomSizeInput('');
+    setShowAddSize(false);
+  }
+
+  function handleAddCustomColor() {
+    const colorName = customColorInput.trim();
+    if (!colorName) return;
+
+    // Persist color in local COLOR_MAP
+    COLOR_MAP[colorName] = customColorHex;
+
+    if (!selectedColors.includes(colorName)) {
+      setSelectedColors((prev) => [...prev, colorName]);
+    }
+
+    setCustomColorInput('');
+    setCustomColorHex('#000000');
+    setShowAddColor(false);
   }
 
   function getStockKey(size: string, color: string) {
@@ -187,7 +273,7 @@ export default function AddProductPage() {
         shape,
         description: description.trim() || undefined,
         tags: tags.split(',').map((t) => t.trim()).filter(Boolean),
-        images,                                       // all URLs now
+        images,
         price: Number(price),
         cost: Number(buyingPrice),
         buyingPrice: Number(buyingPrice),
@@ -222,6 +308,19 @@ export default function AddProductPage() {
       setSaving(false);
     }
   }
+
+  // Compute all visible sizes (preset + custom selected)
+  const visibleSizes = useMemo(() => {
+    const preset = SIZE_PRESETS[shape] || SIZE_PRESETS.other;
+    const custom = selectedSizes.filter((s) => !preset.includes(s));
+    return [...preset, ...custom];
+  }, [shape, selectedSizes]);
+
+  // Compute all visible colors (default + custom selected)
+  const visibleColors = useMemo(() => {
+    const custom = selectedColors.filter((c) => !DEFAULT_COLORS.includes(c));
+    return [...DEFAULT_COLORS, ...custom];
+  }, [selectedColors]);
 
   return (
     <div className="p-8 bg-[#F7F8FA] min-h-screen">
@@ -445,13 +544,54 @@ export default function AddProductPage() {
                 Select sizes and colors, then enter stock quantity for each combination.
               </p>
 
+              {/* Sizes */}
               <div className="mb-5">
-                <div className="text-xs font-medium text-[#8A8F98] uppercase tracking-wide mb-2">
-                  Sizes
+                <div className="flex items-center justify-between mb-2">
+                  <div className="text-xs font-medium text-[#8A8F98] uppercase tracking-wide">
+                    Sizes
+                    <span className="ml-2 text-[#0F2A5C] normal-case">
+                      ({shape} preset)
+                    </span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setShowAddSize((v) => !v)}
+                    className="text-xs font-medium text-[#0F2A5C] hover:underline"
+                  >
+                    {showAddSize ? '✕ Cancel' : '+ Custom Size'}
+                  </button>
                 </div>
+
+                {showAddSize && (
+                  <div className="flex gap-2 mb-3 p-3 bg-[#F1F3F6] rounded-lg">
+                    <input
+                      type="text"
+                      value={customSizeInput}
+                      onChange={(e) => setCustomSizeInput(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          e.preventDefault();
+                          handleAddCustomSize();
+                        }
+                      }}
+                      placeholder="e.g. 32, 34, 42 or XXL"
+                      className="flex-1 bg-white border border-[#E3E6EB] rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[#0F2A5C] transition"
+                    />
+                    <button
+                      type="button"
+                      onClick={handleAddCustomSize}
+                      className="bg-[#0F2A5C] hover:bg-[#0A1F45] text-white px-4 py-2 rounded-lg text-sm font-medium transition"
+                    >
+                      Add
+                    </button>
+                  </div>
+                )}
+
                 <div className="flex flex-wrap gap-2">
-                  {ALL_SIZES.map((s) => {
+                  {visibleSizes.map((s) => {
+                    const preset = SIZE_PRESETS[shape] || SIZE_PRESETS.other;
                     const selected = selectedSizes.includes(s);
+                    const isCustom = !preset.includes(s);
                     return (
                       <button
                         key={s}
@@ -465,19 +605,64 @@ export default function AddProductPage() {
                       >
                         {selected ? '✓ ' : '+ '}
                         {s}
+                        {isCustom && <span className="ml-1 opacity-70">★</span>}
                       </button>
                     );
                   })}
                 </div>
               </div>
 
+              {/* Colors */}
               <div className="mb-5">
-                <div className="text-xs font-medium text-[#8A8F98] uppercase tracking-wide mb-2">
-                  Colors
+                <div className="flex items-center justify-between mb-2">
+                  <div className="text-xs font-medium text-[#8A8F98] uppercase tracking-wide">
+                    Colors
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setShowAddColor((v) => !v)}
+                    className="text-xs font-medium text-[#0F2A5C] hover:underline"
+                  >
+                    {showAddColor ? '✕ Cancel' : '+ Custom Color'}
+                  </button>
                 </div>
+
+                {showAddColor && (
+                  <div className="flex gap-2 mb-3 p-3 bg-[#F1F3F6] rounded-lg">
+                    <input
+                      type="text"
+                      value={customColorInput}
+                      onChange={(e) => setCustomColorInput(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          e.preventDefault();
+                          handleAddCustomColor();
+                        }
+                      }}
+                      placeholder="Color name (e.g. Olive Green)"
+                      className="flex-1 bg-white border border-[#E3E6EB] rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[#0F2A5C] transition"
+                    />
+                    <input
+                      type="color"
+                      value={customColorHex}
+                      onChange={(e) => setCustomColorHex(e.target.value)}
+                      className="w-12 h-10 rounded-lg cursor-pointer border border-[#E3E6EB]"
+                      title="Pick color"
+                    />
+                    <button
+                      type="button"
+                      onClick={handleAddCustomColor}
+                      className="bg-[#0F2A5C] hover:bg-[#0A1F45] text-white px-4 py-2 rounded-lg text-sm font-medium transition"
+                    >
+                      Add
+                    </button>
+                  </div>
+                )}
+
                 <div className="flex flex-wrap gap-2">
-                  {ALL_COLORS.map((c) => {
+                  {visibleColors.map((c) => {
                     const selected = selectedColors.includes(c);
+                    const isCustom = !DEFAULT_COLORS.includes(c);
                     return (
                       <button
                         key={c}
@@ -495,12 +680,14 @@ export default function AddProductPage() {
                         />
                         {selected ? '✓ ' : ''}
                         {c}
+                        {isCustom && <span className="ml-1 opacity-70">★</span>}
                       </button>
                     );
                   })}
                 </div>
               </div>
 
+              {/* Matrix */}
               {selectedSizes.length > 0 && selectedColors.length > 0 ? (
                 <div className="overflow-x-auto border border-[#E3E6EB] rounded-lg">
                   <table className="w-full">
@@ -563,7 +750,8 @@ export default function AddProductPage() {
 
               {finalVariants.length > 0 && (
                 <div className="mt-4 bg-[#E7F7EE] border border-[#0B7A47]/20 rounded-lg px-3.5 py-2.5 text-sm text-[#0B7A47] font-medium">
-                  ✓ {finalVariants.length} variant{finalVariants.length !== 1 ? 's' : ''} will be created
+                  ✓ {finalVariants.length} variant
+                  {finalVariants.length !== 1 ? 's' : ''} will be created
                 </div>
               )}
             </section>
@@ -572,7 +760,9 @@ export default function AddProductPage() {
           {/* RIGHT */}
           <div className="lg:col-span-1 space-y-5">
             <section className="bg-white rounded-lg shadow-[0_2px_10px_rgba(15,42,92,0.06)] p-5">
-              <h2 className="font-serif text-lg font-semibold text-[#0F2A5C] mb-4">Pricing</h2>
+              <h2 className="font-serif text-lg font-semibold text-[#0F2A5C] mb-4">
+                Pricing
+              </h2>
 
               <div className="space-y-4">
                 <div>
@@ -611,7 +801,9 @@ export default function AddProductPage() {
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-[#0F2A5C] mb-1.5">Discount (%)</label>
+                  <label className="block text-sm font-medium text-[#0F2A5C] mb-1.5">
+                    Discount (%)
+                  </label>
                   <input
                     type="number"
                     min="0"
@@ -662,11 +854,25 @@ export default function AddProductPage() {
             </section>
 
             <section className="bg-white rounded-lg shadow-[0_2px_10px_rgba(15,42,92,0.06)] p-5">
-              <h2 className="font-serif text-lg font-semibold text-[#0F2A5C] mb-4">Visibility</h2>
+              <h2 className="font-serif text-lg font-semibold text-[#0F2A5C] mb-4">
+                Visibility
+              </h2>
               <div className="space-y-3">
-                <Toggle label="Active (visible to customers)" checked={active} onChange={setActive} />
-                <Toggle label="Featured (show on homepage)" checked={featured} onChange={setFeatured} />
-                <Toggle label="Try Room available" checked={tryable} onChange={setTryable} />
+                <Toggle
+                  label="Active (visible to customers)"
+                  checked={active}
+                  onChange={setActive}
+                />
+                <Toggle
+                  label="Featured (show on homepage)"
+                  checked={featured}
+                  onChange={setFeatured}
+                />
+                <Toggle
+                  label="Try Room available"
+                  checked={tryable}
+                  onChange={setTryable}
+                />
               </div>
             </section>
 
@@ -687,7 +893,11 @@ export default function AddProductPage() {
                 disabled={saving || uploading}
                 className="w-full bg-[#0F2A5C] hover:bg-[#0A1F45] text-white rounded-lg py-3 font-semibold text-sm transition disabled:opacity-50 shadow-[0_2px_8px_rgba(15,42,92,0.15)]"
               >
-                {saving ? 'Saving...' : uploading ? 'Uploading images...' : 'Create Product'}
+                {saving
+                  ? 'Saving...'
+                  : uploading
+                  ? 'Uploading images...'
+                  : 'Create Product'}
               </button>
 
               <Link
