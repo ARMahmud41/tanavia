@@ -1,5 +1,6 @@
 import type { PrismaClient, Prisma } from '@prisma/client';
 import { StockService } from './stock.service.js';
+import { WhatsAppService } from './whatsapp.service.js';
 import {
   BadRequestError,
   NotFoundError,
@@ -202,7 +203,7 @@ export class OrderService {
     const insideFee = Number(settings.deliveryInside || 70);
     const outsideFee = Number(settings.deliveryOutside || 130);
 
-    return prisma.$transaction(
+    const order = await prisma.$transaction(
       async (tx) => {
         // ============================================
         // 1. Lock + validate variants, build line items
@@ -354,7 +355,7 @@ export class OrderService {
         const paymentStatus =
           input.paymentMethod === 'COD' ? 'WAITING' : 'REVIEW';
 
-        const order = await tx.order.create({
+        const createdOrder = await tx.order.create({
           data: {
             orderNumber,
             channel: 'ONLINE',
@@ -427,7 +428,7 @@ export class OrderService {
               before,
               after,
               reason: `Online order ${orderNumber}`,
-              refId: order.id,
+              refId: createdOrder.id,
             },
             tx
           );
@@ -443,13 +444,31 @@ export class OrderService {
           });
         }
 
-        return order;
+        return createdOrder;
       },
       {
         isolationLevel: 'Serializable',
         timeout: 15000,
       }
     );
+
+    // ============================================
+    // WhatsApp notification (fire & forget)
+    // ============================================
+    WhatsAppService.notifyNewOrder({
+      orderNumber: order.orderNumber,
+      customerName: order.customerName,
+      customerPhone: order.customerPhone,
+      district: order.district || '—',
+      total: order.total,
+      paymentMethod: order.paymentMethod,
+      itemsCount: order.items?.length || 0,
+      channel: 'ONLINE',
+    }).catch((err) => {
+      console.error('[Order] WhatsApp notification failed:', err);
+    });
+
+    return order;
   }
 
   /**

@@ -69,6 +69,18 @@ async function request<T>(
     const data: ApiResponse<T> = await res.json();
 
     if (!res.ok) {
+      // Auto-redirect to admin login on 401 (only in admin area)
+      if (
+        res.status === 401 &&
+        typeof window !== 'undefined' &&
+        window.location.pathname.startsWith('/admin') &&
+        window.location.pathname !== '/admin/login'
+      ) {
+        localStorage.removeItem('tanavia_access_token');
+        localStorage.removeItem('tanavia_user');
+        window.location.href = '/admin/login';
+      }
+
       throw new ApiError(
         res.status,
         data.error || 'UNKNOWN_ERROR',

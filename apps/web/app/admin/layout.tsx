@@ -36,7 +36,12 @@ export default function AdminLayout({
     }
 
     const user = getCurrentUser();
-    if (!user || !isAdmin()) {
+    const token = localStorage.getItem('tanavia_access_token');
+
+    // Token missing or user missing → redirect
+    if (!user || !isAdmin() || !token) {
+      localStorage.removeItem('tanavia_access_token');
+      localStorage.removeItem('tanavia_user');
       router.push('/admin/login');
       return;
     }

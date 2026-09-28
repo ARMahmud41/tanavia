@@ -1,7 +1,6 @@
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { api } from '@/lib/api';
-import { tk, sellPrice } from '@/lib/format';
 import { ProductView } from '@/components/ProductView';
 
 interface Variant {
@@ -52,10 +51,6 @@ export default async function ProductDetailPage({
 
   if (!product) notFound();
 
-  const finalPrice = sellPrice(product.price, product.discount);
-  const hasDiscount = product.discount > 0;
-  const discountAmount = Number(product.price) - finalPrice;
-
   return (
     <div className="container-wrap py-8">
       {/* Breadcrumb */}
@@ -80,7 +75,7 @@ export default async function ProductDetailPage({
         )}
       </div>
 
-      {/* Price block (server-rendered for SEO) */}
+      {/* Product view (client component — handles gallery, variants, add to cart) */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-10 lg:gap-16">
         <ProductView product={product} />
       </div>
