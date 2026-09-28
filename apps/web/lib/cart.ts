@@ -90,3 +90,59 @@ export function cartSubtotal(items?: CartItem[]): number {
 export function cartTotal(items?: CartItem[]): number {
   return cartSubtotal(items); // no tax/shipping yet
 }
+// ============================================
+// Buy Now — direct checkout (separate flow)
+// ============================================
+
+const BUY_NOW_KEY = 'tanavia_buy_now';
+
+/**
+ * Set the buy-now cart (single item) and remember previous cart
+ */
+export function setBuyNow(items: CartItem[]): void {
+  if (typeof window === 'undefined') return;
+
+  // Remember previous cart so we can restore if user cancels
+  const prevCart = getCart();
+  localStorage.setItem('tanavia_cart_backup', JSON.stringify(prevCart));
+
+  // Replace cart with buy-now items
+  setCart(items);
+}
+
+/**
+ * Restore the cart from backup (called when user cancels buy-now flow)
+ */
+export function restoreCartFromBackup(): void {
+  if (typeof window === 'undefined') return;
+
+  const raw = localStorage.getItem('tanavia_cart_backup');
+  if (!raw) {
+    clearCart();
+    return;
+  }
+
+  try {
+    const prev = JSON.parse(raw) as CartItem[];
+    setCart(prev);
+    localStorage.removeItem('tanavia_cart_backup');
+  } catch {
+    clearCart();
+  }
+}
+
+/**
+ * Clear the backup (called when order is placed successfully)
+ */
+export function clearCartBackup(): void {
+  if (typeof window === 'undefined') return;
+  localStorage.removeItem('tanavia_cart_backup');
+}
+
+/**
+ * Check if there's a pending buy-now session
+ */
+export function hasBuyNowSession(): boolean {
+  if (typeof window === 'undefined') return false;
+  return localStorage.getItem('tanavia_cart_backup') !== null;
+}

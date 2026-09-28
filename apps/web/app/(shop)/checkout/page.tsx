@@ -3,7 +3,17 @@
 import Link from 'next/link';
 import { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { getCart, clearCart, type CartItem } from '@/lib/cart';
+import {
+  getCart,
+  setCart,
+  clearCart,
+  clearCartBackup,
+  restoreCartFromBackup,
+  hasBuyNowSession,
+  updateQty,
+  removeFromCart,
+  type CartItem,
+} from '@/lib/cart';
 import { api } from '@/lib/api';
 import { tk } from '@/lib/format';
 
@@ -109,6 +119,28 @@ export default function CheckoutPage() {
     setForm((f) => ({ ...f, [key]: value }));
   }
 
+  function handleQtyChange(variantId: string, newQty: number) {
+    const updated = updateQty(variantId, newQty);
+    setItems([...updated]);
+  }
+
+  function handleRemove(variantId: string) {
+    const updated = removeFromCart(variantId);
+    if (updated.length === 0) {
+      router.push('/cart');
+      return;
+    }
+    setItems([...updated]);
+  }
+
+  function handleCancel() {
+    // If this was a buy-now flow, restore the previous cart
+    if (hasBuyNowSession()) {
+      restoreCartFromBackup();
+    }
+    router.push('/cart');
+  }
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError('');
@@ -150,10 +182,15 @@ export default function CheckoutPage() {
         })),
       };
 
-      const res = await api.post<{ id: string; orderNumber: string }>('/api/orders', payload);
+      const res = await api.post<{ id: string; orderNumber: string }>(
+        '/api/orders',
+        payload
+      );
       if (!res.data) throw new Error('Order placement failed');
 
+      // Clear both current cart and any buy-now backup
       clearCart();
+      clearCartBackup();
 
       if (form.paymentMethod === 'CARD') {
         router.push(`/pay/${res.data.orderNumber}`);
@@ -161,7 +198,8 @@ export default function CheckoutPage() {
         router.push(`/order-success/${res.data.orderNumber}`);
       }
     } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : 'Something went wrong';
+      const message =
+        err instanceof Error ? err.message : 'Something went wrong';
       setError(message);
       setSubmitting(false);
     }
@@ -174,9 +212,16 @@ export default function CheckoutPage() {
     <div className="bg-[#F5F6F8] min-h-screen">
       <div className="container-wrap py-8 md:py-12">
         {/* Header */}
-        <h1 className="font-serif text-3xl md:text-4xl font-semibold text-[#0F2A5C] mb-8">
-          Checkout
-        </h1>
+        <div className="flex items-center justify-between mb-8">
+          <h1 className="font-serif text-3xl md:text-4xl font-semibold text-[#0F2A5C]">
+            Checkout
+          </h1>
+          {hasBuyNowSession() && (
+            <span className="text-xs bg-amber-100 text-amber-800 border border-amber-200 px-3 py-1.5 rounded-full font-medium">
+              ⚡ Quick checkout
+            </span>
+          )}
+        </div>
 
         <form onSubmit={handleSubmit}>
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -283,7 +328,7 @@ export default function CheckoutPage() {
               <section className="bg-white rounded-lg shadow-[0_2px_10px_rgba(15,42,92,0.06)] p-5">
                 <SectionHeader step={3} title="Payment" />
 
-                {/* Payment grid — 3 columns */}
+                {/* Payment grid */}
                 <div className="grid grid-cols-3 gap-3">
                   {PAYMENT_METHODS.map((pm) => {
                     const selected = form.paymentMethod === pm.value;
@@ -365,7 +410,6 @@ export default function CheckoutPage() {
             {/* Right — Order Summary */}
             <div className="lg:col-span-1">
               <div className="bg-white rounded-lg shadow-[0_2px_10px_rgba(15,42,92,0.06)] overflow-hidden lg:sticky lg:top-24">
-                {/* Summary header */}
                 <div className="bg-[#0F2A5C] text-white px-4 py-2.5">
                   <span className="text-sm font-semibold tracking-wide">
                     Order Summary
@@ -373,14 +417,18 @@ export default function CheckoutPage() {
                 </div>
 
                 <div className="p-5">
-                  <div className="space-y-3 mb-4 max-h-64 overflow-y-auto">
+                  <div className="space-y-3 mb-4 max-h-96 overflow-y-auto pr-1">
                     {items.map((item) => {
                       const finalPrice = Math.round(
                         item.price * (1 - item.discount / 100)
                       );
                       return (
-                        <div key={item.variantId} className="flex gap-3 text-sm">
-                          <div className="w-12 h-16 bg-[#F1F3F6] rounded-md overflow-hidden flex-shrink-0">
+                        <div
+                          key={item.variantId}
+                          className="flex gap-3 text-sm pb-3 border-b border-[#F1F3F6] last:border-b-0 last:pb-0"
+                        >
+                          {/* Image */}
+                          <div className="w-14 h-20 bg-[#F1F3F6] rounded-md overflow-hidden flex-shrink-0">
                             {item.image ? (
                               // eslint-disable-next-line @next/next/no-img-element
                               <img
@@ -394,15 +442,71 @@ export default function CheckoutPage() {
                               </div>
                             )}
                           </div>
+
+                          {/* Info + Qty + Remove */}
                           <div className="flex-1 min-w-0">
-                            <div className="font-medium text-ink text-sm line-clamp-1">
-                              {item.name}
+                            {/* Row 1: name + remove */}
+                            <div className="flex items-start justify-between gap-2">
+                              <div className="flex-1 min-w-0">
+                                <div className="font-medium text-ink text-sm line-clamp-1">
+                                  {item.name}
+                                </div>
+                                <div className="text-xs text-[#8A8F98] mt-0.5">
+                                  {item.color} • {item.size}
+                                </div>
+                              </div>
+                              <button
+                                type="button"
+                                onClick={() => handleRemove(item.variantId)}
+                                className="text-[#8A8F98] hover:text-red-600 flex-shrink-0 w-6 h-6 flex items-center justify-center rounded hover:bg-red-50 transition"
+                                aria-label="Remove item"
+                              >
+                                ✕
+                              </button>
                             </div>
-                            <div className="text-xs text-[#8A8F98] mt-0.5">
-                              {item.color} • {item.size}
-                            </div>
-                            <div className="text-[#0F2A5C] font-semibold mt-1 text-sm">
-                              {tk(finalPrice * item.qty)}
+
+                            {/* Row 2: qty stepper + price */}
+                            <div className="flex items-center justify-between mt-2 gap-2">
+                              {/* Qty stepper */}
+                              <div className="flex items-center border border-[#E3E6EB] rounded-lg overflow-hidden bg-white">
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    handleQtyChange(item.variantId, item.qty - 1)
+                                  }
+                                  disabled={item.qty <= 1}
+                                  className="w-7 h-7 flex items-center justify-center text-[#0F2A5C] hover:bg-[#F1F3F6] disabled:opacity-30 disabled:cursor-not-allowed transition text-base font-medium"
+                                  aria-label="Decrease quantity"
+                                >
+                                  −
+                                </button>
+                                <span className="w-8 text-center text-sm font-medium text-[#0F2A5C]">
+                                  {item.qty}
+                                </span>
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    handleQtyChange(item.variantId, item.qty + 1)
+                                  }
+                                  disabled={item.qty >= item.maxQty}
+                                  className="w-7 h-7 flex items-center justify-center text-[#0F2A5C] hover:bg-[#F1F3F6] disabled:opacity-30 disabled:cursor-not-allowed transition text-base font-medium"
+                                  aria-label="Increase quantity"
+                                >
+                                  +
+                                </button>
+                              </div>
+
+                              {/* Price */}
+                              <div className="text-right">
+                                <div className="text-[#0F2A5C] font-semibold text-sm">
+                                  {tk(finalPrice * item.qty)}
+                                </div>
+                                {item.qty > 1 && (
+                                  <div className="text-[10px] text-[#8A8F98] leading-tight">
+                                    {tk(finalPrice)} each
+                                  </div>
+                                )}
+                              </div>
                             </div>
                           </div>
                         </div>
@@ -431,12 +535,13 @@ export default function CheckoutPage() {
                     {submitting ? 'Placing order...' : 'Place Order'}
                   </button>
 
-                  <Link
-                    href="/cart"
-                    className="block text-center text-xs text-[#8A8F98] hover:text-[#0F2A5C] mt-3"
+                  <button
+                    type="button"
+                    onClick={handleCancel}
+                    className="block w-full text-center text-xs text-[#8A8F98] hover:text-[#0F2A5C] mt-3"
                   >
-                    ← Back to Cart
-                  </Link>
+                    ← Cancel & Back to Cart
+                  </button>
                 </div>
               </div>
             </div>

@@ -11,6 +11,8 @@ async function start() {
     await app.listen({ port: PORT, host: HOST });
     app.log.info(`TANAVIA API running at http://localhost:${PORT}`);
     app.log.info(`Health check: http://localhost:${PORT}/health`);
+    const uploadDir = process.env.UPLOAD_DIR || 'uploads';
+    app.log.info(`Uploads: http://localhost:${PORT}/${uploadDir}/`);
   } catch (err) {
     app.log.error(err);
     process.exit(1);

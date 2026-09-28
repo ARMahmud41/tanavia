@@ -1,7 +1,8 @@
 'use client';
 
 import { useState } from 'react';
-import { addToCart } from '@/lib/cart';
+import { useRouter } from 'next/navigation';
+import { addToCart, setBuyNow } from '@/lib/cart';
 
 interface Variant {
   id: string;
@@ -24,6 +25,7 @@ interface Props {
 }
 
 export function AddToCartButton({ product }: Props) {
+  const router = useRouter();
   const [selectedColor, setSelectedColor] = useState<string>(
     product.variants[0]?.color || ''
   );
@@ -47,25 +49,30 @@ export function AddToCartButton({ product }: Props) {
   const totalStock = product.variants.reduce((s, v) => s + v.qty, 0);
   const outOfStock = totalStock === 0;
 
-  function handleAdd() {
+  function validate(): boolean {
     setError('');
 
     if (!selectedSize) {
       setError('Please select a size');
-      return;
+      return false;
     }
 
     if (!selectedVariant) {
       setError('This variant is not available');
-      return;
+      return false;
     }
 
     if (selectedVariant.qty <= 0) {
       setError('This variant is out of stock');
-      return;
+      return false;
     }
 
-    addToCart({
+    return true;
+  }
+
+  function buildCartItem() {
+    if (!selectedVariant) return null;
+    return {
       productId: product.id,
       variantId: selectedVariant.id,
       name: product.name,
@@ -76,10 +83,32 @@ export function AddToCartButton({ product }: Props) {
       size: selectedVariant.size,
       color: selectedVariant.color,
       maxQty: selectedVariant.qty,
-    });
+    };
+  }
 
+  function handleAdd() {
+    if (!validate()) return;
+
+    const item = buildCartItem();
+    if (!item) return;
+
+    addToCart(item);
     setAdded(true);
     setTimeout(() => setAdded(false), 2000);
+  }
+
+  function handleBuyNow() {
+    if (!validate()) return;
+
+    const item = buildCartItem();
+    if (!item) return;
+
+    // Set this item as the ONLY item for checkout.
+    // Previous cart is backed up and can be restored via
+    // restoreCartFromBackup() from the checkout page.
+    setBuyNow([{ ...item, qty: 1 }]);
+
+    router.push('/checkout');
   }
 
   return (
@@ -94,6 +123,7 @@ export function AddToCartButton({ product }: Props) {
             {colors.map((color) => (
               <button
                 key={color}
+                type="button"
                 onClick={() => {
                   setSelectedColor(color);
                   setSelectedSize('');
@@ -124,6 +154,7 @@ export function AddToCartButton({ product }: Props) {
               return (
                 <button
                   key={size}
+                  type="button"
                   disabled={disabled}
                   onClick={() => setSelectedSize(size)}
                   className={`px-4 py-2 border rounded text-sm transition ${
@@ -168,15 +199,35 @@ export function AddToCartButton({ product }: Props) {
       )}
 
       {/* Buttons */}
-      <div className="flex gap-3 mb-6">
+      <div className="space-y-3 mb-6">
+        {/* Primary row: Add to Cart + Wishlist */}
+        <div className="flex gap-3">
+          <button
+            type="button"
+            onClick={handleAdd}
+            disabled={outOfStock}
+            className="flex-1 justify-center rounded-full py-3.5 font-semibold text-sm border-2 border-wine text-wine bg-white hover:bg-wine hover:text-white transition disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {added ? '✓ Added to Cart!' : 'Add to Cart'}
+          </button>
+          <button
+            type="button"
+            className="w-12 rounded-full border-2 border-line flex items-center justify-center text-lg hover:border-wine transition"
+            aria-label="Wishlist"
+          >
+            ♡
+          </button>
+        </div>
+
+        {/* Buy Now button */}
         <button
-          onClick={handleAdd}
+          type="button"
+          onClick={handleBuyNow}
           disabled={outOfStock}
-          className="btn flex-1 justify-center disabled:opacity-50 disabled:cursor-not-allowed"
+          className="w-full bg-wine hover:bg-wine-dark text-white rounded-full py-3.5 font-semibold text-sm transition disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
         >
-          {added ? '✓ Added!' : 'Add to Cart'}
+          ⚡ Buy Now
         </button>
-        <button className="btn btn-ghost">♡</button>
       </div>
     </div>
   );
