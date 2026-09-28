@@ -716,9 +716,13 @@ export class OrderService {
 
     const where: Prisma.OrderWhereInput = {};
 
-    if (filters.status) where.status = filters.status as any;
+    if (filters.status) {
+      where.status = filters.status.toUpperCase() as any;
+    }
     if (filters.channel) where.channel = filters.channel;
-    if (filters.paymentStatus) where.paymentStatus = filters.paymentStatus as any;
+    if (filters.paymentStatus) {
+      where.paymentStatus = filters.paymentStatus.toUpperCase() as any;
+    }
 
     if (filters.search) {
       const q = filters.search.trim();
