@@ -71,10 +71,12 @@ const PUBLIC_SELECT = {
   variants: {
     select: {
       id: true,
+      sku: true,
       size: true,
       color: true,
       qty: true,
       reserved: true,
+      reorderLevel: true,
     },
   },
 } satisfies Prisma.ProductSelect;
@@ -141,11 +143,22 @@ export class ProductService {
         slug,
         status: 'ACTIVE',
         variants: {
-          create: input.variants.map((v) => ({
-            size: v.size,
-            color: v.color,
-            qty: v.qty,
-          })),
+          create: input.variants.map((v) => {
+            const sizeCode = v.size
+              .toUpperCase()
+              .replace(/[^A-Z0-9]/g, '')
+              .slice(0, 4);
+            const colorCode = v.color
+              .toUpperCase()
+              .replace(/[^A-Z0-9]/g, '')
+              .slice(0, 3);
+            return {
+              size: v.size,
+              color: v.color,
+              qty: v.qty,
+              sku: `${sku}-${sizeCode}-${colorCode}`,
+            };
+          }),
         },
       },
       select: ADMIN_SELECT,

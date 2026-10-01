@@ -132,7 +132,8 @@ model Shift {
 
   @@index([userId, status])
   @@index([openedAt])
-}    
+}
+
 // ============================================
 // PRODUCT (with variants)
 // ============================================
@@ -188,16 +189,18 @@ model Product {
 }
 
 model Variant {
-  id        String   @id @default(cuid())
-  productId String
-  size      String
-  color     String
-  qty       Int      @default(0)
-  reserved  Int      @default(0)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id           String   @id @default(cuid())
+  productId    String
+  sku          String?  @unique
+  size         String
+  color        String
+  qty          Int      @default(0)
+  reserved     Int      @default(0)
+  reorderLevel Int      @default(5)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
 
-  product   Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  product    Product         @relation(fields: [productId], references: [id], onDelete: Cascade)
   stockMoves StockMovement[]
 
   @@unique([productId, size, color])
@@ -252,6 +255,7 @@ model DropProduct {
   @@index([dropId])
   @@index([productId])
 }
+
 // ============================================
 // ORDER (online + offline)
 // ============================================
@@ -378,6 +382,8 @@ enum StockMoveType {
   DAMAGE
   ADJUSTMENT
   TRANSFER
+  RESERVE
+  RESERVE_RELEASE
 }
 
 model StockMovement {
@@ -400,6 +406,7 @@ model StockMovement {
   @@index([variantId])
   @@index([type, createdAt])
 }
+
 // ============================================
 // TRANSACTION (COD waiting / cash received)
 // ============================================
@@ -595,6 +602,7 @@ model PurchaseOrderItem {
   @@index([purchaseId])
   @@index([productId])
 }
+
 // ============================================
 // REVIEW
 // ============================================

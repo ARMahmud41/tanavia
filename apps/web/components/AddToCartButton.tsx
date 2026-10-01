@@ -79,7 +79,8 @@ export function AddToCartButton({
       return false;
     }
 
-    if (selectedVariant.qty <= 0) {
+    const available = selectedVariant.qty - selectedVariant.reserved;
+    if (available <= 0) {
       setError('This variant is out of stock');
       return false;
     }
@@ -89,6 +90,7 @@ export function AddToCartButton({
 
   function buildCartItem() {
     if (!selectedVariant) return null;
+    const available = selectedVariant.qty - selectedVariant.reserved;
     return {
       productId: product.id,
       variantId: selectedVariant.id,
@@ -99,7 +101,7 @@ export function AddToCartButton({
       discount: product.discount,
       size: selectedVariant.size,
       color: selectedVariant.color,
-      maxQty: selectedVariant.qty,
+      maxQty: available, // ← available, not total qty
     };
   }
 
@@ -158,7 +160,7 @@ export function AddToCartButton({
         </div>
       )}
 
-      {/* Size picker */}
+      {/* Size picker — only show available sizes */}
       {sizes.length > 0 && (
         <div className="mb-6">
           <div className="text-sm font-medium mb-2">Size</div>
@@ -167,18 +169,25 @@ export function AddToCartButton({
               const variant = product.variants.find(
                 (v) => v.color === selectedColor && v.size === size
               );
-              const disabled = !variant || variant.qty <= 0;
+              const available = variant ? variant.qty - variant.reserved : 0;
+              const disabled = !variant || available <= 0;
+              // Show disabled (strikethrough) if we want visible hint
+              // OR hide if stock ends
+              if (disabled) {
+                // Option A: Hide
+                return null;
+
+                // Option B: Show with strikethrough (current)
+                // return (...);
+              }
               return (
                 <button
                   key={size}
                   type="button"
-                  disabled={disabled}
                   onClick={() => setSelectedSize(size)}
                   className={`px-4 py-2 border rounded text-sm transition ${
                     selectedSize === size
                       ? 'border-wine bg-wine text-white'
-                      : disabled
-                      ? 'border-line text-muted line-through opacity-50 cursor-not-allowed'
                       : 'border-line hover:border-wine'
                   }`}
                 >
@@ -187,6 +196,19 @@ export function AddToCartButton({
               );
             })}
           </div>
+
+          {/* If no sizes available for this color */}
+          {sizes.every((size) => {
+            const variant = product.variants.find(
+              (v) => v.color === selectedColor && v.size === size
+            );
+            const available = variant ? variant.qty - variant.reserved : 0;
+            return available <= 0;
+          }) && (
+            <div className="text-xs text-amber-600 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 mt-2">
+              ⚠ All sizes of {selectedColor} are out of stock
+            </div>
+          )}
         </div>
       )}
 
@@ -196,7 +218,8 @@ export function AddToCartButton({
           <span className="text-wine">✗ Stock out</span>
         ) : selectedVariant ? (
           <span className="text-leaf">
-            ✓ In stock ({selectedVariant.qty} available)
+            ✓ In stock ({selectedVariant.qty - selectedVariant.reserved}{' '}
+            available)
           </span>
         ) : (
           <span className="text-muted">

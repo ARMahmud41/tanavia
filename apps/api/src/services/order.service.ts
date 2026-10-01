@@ -1,6 +1,7 @@
 import type { PrismaClient, Prisma } from '@prisma/client';
 import { StockService } from './stock.service.js';
 import { WhatsAppService } from './whatsapp.service.js';
+import { TelegramService } from './telegram.service.js';
 import {
   BadRequestError,
   NotFoundError,
@@ -187,7 +188,13 @@ export class OrderService {
 
   /**
    * Place an ONLINE order (from website).
-   * Uses a transaction to ensure no oversell.
+   *
+   * Stock model:
+   * - On PLACED  → reserved += qty (qty untouched)
+   * - On SHIPPED → qty -= qty AND reserved -= qty
+   * - On CANCEL  → reserved -= qty (if not yet shipped)
+   *                OR qty += qty (if already shipped)
+   * This lets POS see "available = qty - reserved" and avoid overselling.
    */
   static async placeOnlineOrder(
     input: PlaceOrderInput,
@@ -197,7 +204,6 @@ export class OrderService {
       throw new BadRequestError('At least one item is required');
     }
 
-    // Load shop settings
     const settings = await this.getSettings(prisma);
     const freeShipOver = Number(settings.freeShipOver || 1000);
     const insideFee = Number(settings.deliveryInside || 70);
@@ -206,7 +212,7 @@ export class OrderService {
     const order = await prisma.$transaction(
       async (tx) => {
         // ============================================
-        // 1. Lock + validate variants, build line items
+        // 1. Validate variants, build line items
         // ============================================
         const lineItems: Array<{
           productId: string;
@@ -290,11 +296,7 @@ export class OrderService {
         let isShippingCoupon = false;
 
         if (input.couponCode) {
-          const result = await this.applyCoupon(
-            input.couponCode,
-            subtotal,
-            tx
-          );
+          const result = await this.applyCoupon(input.couponCode, subtotal, tx);
           discount = result.discount;
           couponCode = result.code;
 
@@ -327,7 +329,6 @@ export class OrderService {
         });
 
         if (!customer) {
-          // Guest customer — create a minimal user record
           const crypto = await import('node:crypto');
           const placeholderEmail = `guest_${input.customerPhone}_${Date.now()}@tanavia.local`;
           customer = await tx.user.create({
@@ -335,9 +336,7 @@ export class OrderService {
               name: input.customerName,
               email: placeholderEmail,
               phone: input.customerPhone,
-              passwordHash: crypto
-                .randomBytes(32)
-                .toString('hex'), // random — user must register to login
+              passwordHash: crypto.randomBytes(32).toString('hex'),
               role: 'CUSTOMER',
             },
             select: { id: true },
@@ -398,7 +397,8 @@ export class OrderService {
         });
 
         // ============================================
-        // 7. Reduce stock + log movements
+        // 7. Reserve stock (do NOT deduct qty yet)
+        //    qty is deducted when order becomes SHIPPED
         // ============================================
         for (const li of lineItems) {
           const variant = await tx.variant.findUnique({
@@ -406,12 +406,14 @@ export class OrderService {
           });
           if (!variant) continue;
 
-          const before = variant.qty;
-          const after = before - li.qty;
+          const beforeQty = variant.qty;
+          const beforeReserved = variant.reserved;
 
           await tx.variant.update({
             where: { id: li.variantId },
-            data: { qty: after },
+            data: {
+              reserved: { increment: li.qty },
+            },
           });
 
           await tx.product.update({
@@ -423,11 +425,11 @@ export class OrderService {
             {
               productId: li.productId,
               variantId: li.variantId,
-              type: 'SALE_ONLINE',
-              qty: -li.qty,
-              before,
-              after,
-              reason: `Online order ${orderNumber}`,
+              type: 'RESERVE',
+              qty: li.qty,
+              before: beforeQty,
+              after: beforeQty,
+              reason: `Reserved for online order ${orderNumber} (reserved: ${beforeReserved} → ${beforeReserved + li.qty})`,
               refId: createdOrder.id,
             },
             tx
@@ -468,6 +470,29 @@ export class OrderService {
       console.error('[Order] WhatsApp notification failed:', err);
     });
 
+    // ============================================
+    // Telegram notification (fire & forget)
+    // ============================================
+    TelegramService.notifyNewOrder({
+      orderNumber: order.orderNumber,
+      customerName: order.customerName,
+      customerPhone: order.customerPhone,
+      district: order.district || '—',
+      address: order.address,
+      total: order.total,
+      paymentMethod: order.paymentMethod,
+      itemsCount: order.items?.length || 0,
+      channel: 'ONLINE',
+      items: order.items?.map((it) => ({
+        name: it.name,
+        size: it.size,
+        color: it.color,
+        qty: it.qty,
+      })),
+    }).catch((err) => {
+      console.error('[Order] Telegram notification failed:', err);
+    });
+
     return order;
   }
 
@@ -489,7 +514,9 @@ export class OrderService {
   }
 
   /**
-   * Place an OFFLINE order (from POS / physical shop).
+   * Place an OFFLINE order (POS / physical shop).
+   * Permanently deducts qty (skips reserved).
+   * Checks only available = qty - reserved.
    */
   static async placeOfflineOrder(
     input: PlaceOfflineOrderInput,
@@ -548,9 +575,10 @@ export class OrderService {
             );
           }
 
-          if (variant.qty < item.qty) {
+          const available = variant.qty - variant.reserved;
+          if (available < item.qty) {
             throw new ConflictError(
-              `${product.name} (${item.size}/${item.color}) — only ${variant.qty} left in stock`
+              `${product.name} (${item.size}/${item.color}) — only ${available} available (${variant.reserved} reserved for online orders)`
             );
           }
 
@@ -572,10 +600,7 @@ export class OrderService {
           subtotal += finalPrice * item.qty;
         }
 
-        const discount = Math.min(
-          input.discountAmount || 0,
-          subtotal
-        );
+        const discount = Math.min(input.discountAmount || 0, subtotal);
         const total = subtotal - discount;
         const orderNumber = await this.generateOrderNumber(tx);
 
@@ -584,7 +609,7 @@ export class OrderService {
             orderNumber,
             channel: 'OFFLINE',
             shiftId: input.shiftId || null,
-            status: 'DELIVERED', // offline sale = instant
+            status: 'DELIVERED',
             customerName: input.customerName || 'Walk-in Customer',
             customerPhone: input.customerPhone || null,
             note: input.note || null,
@@ -623,7 +648,7 @@ export class OrderService {
           select: ORDER_SELECT,
         });
 
-        // Reduce stock + log
+        // Permanently deduct qty (POS sale)
         for (const li of lineItems) {
           const variant = await tx.variant.findUnique({
             where: { id: li.variantId },
@@ -690,7 +715,6 @@ export class OrderService {
 
   /**
    * Get order by order number (public track).
-   * Hides sensitive fields.
    */
   static async getByOrderNumber(orderNumber: string, prisma: PrismaClient) {
     const order = await prisma.order.findUnique({
@@ -774,13 +798,13 @@ export class OrderService {
       prisma.order.count({ where }),
     ]);
 
-    // Compute profit per order (admin only)
     const enriched = items.map((o) => ({
       ...o,
-      profit: o.items.reduce(
-        (sum, it) => sum + (Number(it.price) - Number(it.cost)) * it.qty,
-        0
-      ) - Number(o.discount || 0),
+      profit:
+        o.items.reduce(
+          (sum, it) => sum + (Number(it.price) - Number(it.cost)) * it.qty,
+          0
+        ) - Number(o.discount || 0),
     }));
 
     return {
@@ -795,7 +819,16 @@ export class OrderService {
   }
 
   /**
-   * Update order status. Adds an event.
+   * Update order status. Adds an event + adjusts stock intelligently.
+   *
+   * Stock transitions:
+   * - SHIPPED (from any prior status, ONLINE only)
+   *   → qty -= qty AND reserved -= qty
+   * - CANCELLED
+   *   → if already shipped/delivered (ONLINE): qty += qty
+   *   → otherwise (ONLINE not shipped): reserved -= qty
+   *   → OFFLINE orders don't need any restoration (stock already deducted,
+   *      but cancelled OFFLINE sales are rare — treat as return: qty += qty)
    */
   static async updateStatus(
     id: string,
@@ -806,7 +839,7 @@ export class OrderService {
   ) {
     const order = await prisma.order.findUnique({
       where: { id },
-      select: { id: true, status: true },
+      select: { id: true, status: true, channel: true },
     });
     if (!order) throw new NotFoundError('Order not found');
 
@@ -823,8 +856,14 @@ export class OrderService {
       throw new BadRequestError('Invalid status');
     }
 
-    // Special handling: cancel → restore stock
-    if (status === 'CANCELLED' && order.status !== 'CANCELLED') {
+    // ============================================
+    // SHIPPED → deduct qty + release reserve (ONLINE only)
+    // ============================================
+    if (
+      status === 'SHIPPED' &&
+      order.status !== 'SHIPPED' &&
+      order.channel === 'ONLINE'
+    ) {
       return prisma.$transaction(async (tx) => {
         const fullOrder = await tx.order.findUnique({
           where: { id },
@@ -844,13 +883,102 @@ export class OrderService {
           });
           if (!variant) continue;
 
-          const before = variant.qty;
-          const after = before + item.qty;
+          const beforeQty = variant.qty;
+          const afterQty = beforeQty - item.qty;
 
           await tx.variant.update({
             where: { id: variant.id },
-            data: { qty: after },
+            data: {
+              qty: { decrement: item.qty },
+              reserved: { decrement: item.qty },
+            },
           });
+
+          await StockService.log(
+            {
+              productId: item.productId,
+              variantId: variant.id,
+              type: 'SALE_ONLINE',
+              qty: -item.qty,
+              before: beforeQty,
+              after: afterQty,
+              reason: `Order ${fullOrder.orderNumber} shipped (reservation released)`,
+              refId: id,
+              actorId,
+            },
+            tx
+          );
+        }
+
+        return tx.order.update({
+          where: { id },
+          data: {
+            status: 'SHIPPED' as any,
+            events: {
+              create: {
+                status: 'SHIPPED',
+                note: note || 'Order shipped',
+                actor: actorId || 'system',
+              },
+            },
+          },
+          select: ORDER_SELECT,
+        });
+      });
+    }
+
+    // ============================================
+    // CANCELLED → release reserve OR restore qty
+    // ============================================
+    if (status === 'CANCELLED' && order.status !== 'CANCELLED') {
+      return prisma.$transaction(async (tx) => {
+        const fullOrder = await tx.order.findUnique({
+          where: { id },
+          select: {
+            id: true,
+            orderNumber: true,
+            items: true,
+            channel: true,
+            status: true,
+          },
+        });
+        if (!fullOrder) throw new NotFoundError('Order not found');
+
+        // Was qty already permanently deducted?
+        // ONLINE + (SHIPPED or DELIVERED) → yes, restore qty
+        // OFFLINE (always DELIVERED)       → yes, restore qty
+        // ONLINE + (PLACED/CONFIRMED/PACKED) → no, only reserved
+        const wasShipped =
+          fullOrder.channel === 'OFFLINE' ||
+          (fullOrder.channel === 'ONLINE' &&
+            ['SHIPPED', 'DELIVERED'].includes(fullOrder.status));
+
+        for (const item of fullOrder.items) {
+          const variant = await tx.variant.findUnique({
+            where: {
+              productId_size_color: {
+                productId: item.productId,
+                size: item.size,
+                color: item.color,
+              },
+            },
+          });
+          if (!variant) continue;
+
+          const beforeQty = variant.qty;
+          const afterQty = wasShipped ? beforeQty + item.qty : beforeQty;
+
+          if (wasShipped) {
+            await tx.variant.update({
+              where: { id: variant.id },
+              data: { qty: afterQty },
+            });
+          } else {
+            await tx.variant.update({
+              where: { id: variant.id },
+              data: { reserved: { decrement: item.qty } },
+            });
+          }
 
           await tx.product.update({
             where: { id: item.productId },
@@ -861,11 +989,13 @@ export class OrderService {
             {
               productId: item.productId,
               variantId: variant.id,
-              type: 'RETURN',
-              qty: item.qty,
-              before,
-              after,
-              reason: `Order ${fullOrder.orderNumber} cancelled`,
+              type: wasShipped ? 'RETURN' : 'RESERVE_RELEASE',
+              qty: wasShipped ? item.qty : -item.qty,
+              before: beforeQty,
+              after: afterQty,
+              reason: wasShipped
+                ? `Order ${fullOrder.orderNumber} cancelled (stock restored)`
+                : `Order ${fullOrder.orderNumber} cancelled (reservation released)`,
               refId: id,
               actorId,
             },
@@ -878,7 +1008,11 @@ export class OrderService {
           data: {
             status,
             events: {
-              create: { status, note: note || 'Order cancelled', actor: actorId || 'system' },
+              create: {
+                status,
+                note: note || 'Order cancelled',
+                actor: actorId || 'system',
+              },
             },
           },
           select: ORDER_SELECT,
@@ -886,7 +1020,9 @@ export class OrderService {
       });
     }
 
+    // ============================================
     // Normal status update
+    // ============================================
     return prisma.order.update({
       where: { id },
       data: {
@@ -904,7 +1040,7 @@ export class OrderService {
   }
 
   /**
-   * Mark payment as PAID (for COD → cash received, or verify digital).
+   * Mark payment as PAID.
    */
   static async markPaid(
     id: string,

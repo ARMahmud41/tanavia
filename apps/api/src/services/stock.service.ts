@@ -7,7 +7,9 @@ type StockMoveType =
   | 'RETURN'
   | 'DAMAGE'
   | 'ADJUSTMENT'
-  | 'TRANSFER';
+  | 'TRANSFER'
+  | 'RESERVE'
+  | 'RESERVE_RELEASE';
 
 interface LogMovementInput {
   productId: string;

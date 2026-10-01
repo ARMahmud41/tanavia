@@ -65,6 +65,12 @@ export default function CheckoutPage() {
   const [items, setItems] = useState<CartItem[]>([]);
   const [mounted, setMounted] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+
+  // Stock validation state
+  const [stockIssues, setStockIssues] = useState<string[]>([]);
+  const [checkingStock, setCheckingStock] = useState(false);
+  const [stockChecked, setStockChecked] = useState(false);
+
   const [error, setError] = useState('');
   const [form, setForm] = useState<FormData>({
     customerName: '',
@@ -100,6 +106,14 @@ export default function CheckoutPage() {
     setItems(cart);
   }, [router]);
 
+  // Check stock when items loaded
+  useEffect(() => {
+    if (mounted && items.length > 0 && !stockChecked) {
+      validateStock();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mounted, items.length]);
+
   if (!mounted) {
     return (
       <div className="container-wrap py-16 text-center text-muted">
@@ -114,6 +128,57 @@ export default function CheckoutPage() {
     const finalPrice = Math.round(item.price * (1 - item.discount / 100));
     return sum + finalPrice * item.qty;
   }, 0);
+
+  // Validate stock for all cart items
+  async function validateStock() {
+    if (items.length === 0) return;
+
+    setCheckingStock(true);
+    setStockIssues([]);
+
+    try {
+      const issues: string[] = [];
+
+      for (const item of items) {
+        // Fetch product to get latest stock
+        const productSlug = item.slug;
+        const res = await api.get<{
+          variants: Array<{
+            id: string;
+            size: string;
+            color: string;
+            qty: number;
+            reserved: number;
+          }>;
+        }>(`/api/products/slug/${productSlug}`);
+
+        if (!res.data) continue;
+
+        const variant = res.data.variants.find(
+          (v) => v.size === item.size && v.color === item.color
+        );
+
+        if (!variant) {
+          issues.push(`${item.name} (${item.size}/${item.color}) — not available`);
+          continue;
+        }
+
+        const available = variant.qty - variant.reserved;
+        if (available < item.qty) {
+          issues.push(
+            `${item.name} (${item.size}/${item.color}) — only ${available} left in stock`
+          );
+        }
+      }
+
+      setStockIssues(issues);
+    } catch (err) {
+      console.error('Stock check failed:', err);
+    } finally {
+      setCheckingStock(false);
+      setStockChecked(true);
+    }
+  }
 
   function update<K extends keyof FormData>(key: K, value: FormData[K]) {
     setForm((f) => ({ ...f, [key]: value }));
@@ -144,6 +209,14 @@ export default function CheckoutPage() {
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError('');
+
+    // Re-validate stock right before submitting
+    await validateStock();
+
+    if (stockIssues.length > 0) {
+      setError('Some items are out of stock. Please review the errors above.');
+      return;
+    }
 
     if (form.customerName.trim().length < 3) {
       setError('Name must be at least 3 characters');
@@ -521,6 +594,33 @@ export default function CheckoutPage() {
                     </span>
                   </div>
 
+                  {/* Stock Issues */}
+                  {checkingStock && (
+                    <div className="mt-4 text-xs text-[#8A8F98] bg-[#F1F3F6] rounded-lg px-3 py-2 text-center">
+                      Checking stock...
+                    </div>
+                  )}
+
+                  {stockIssues.length > 0 && (
+                    <div className="mt-4 bg-red-50 border border-red-200 rounded-lg p-3 space-y-1">
+                      <div className="text-xs font-semibold text-red-700 mb-1">
+                        ⚠ Stock Issues
+                      </div>
+                      {stockIssues.map((issue, i) => (
+                        <div key={i} className="text-xs text-red-700">
+                          • {issue}
+                        </div>
+                      ))}
+                      <button
+                        type="button"
+                        onClick={validateStock}
+                        className="text-xs text-red-700 underline mt-2 hover:no-underline"
+                      >
+                        Re-check stock
+                      </button>
+                    </div>
+                  )}
+
                   {error && (
                     <div className="mt-4 text-xs text-red-700 bg-red-50 border border-red-200 rounded-lg px-3 py-2">
                       {error}
@@ -529,10 +629,18 @@ export default function CheckoutPage() {
 
                   <button
                     type="submit"
-                    disabled={submitting}
+                    disabled={
+                      submitting || checkingStock || stockIssues.length > 0
+                    }
                     className="mt-5 w-full bg-[#0F2A5C] hover:bg-[#0A1F45] text-white rounded-lg py-3 font-semibold text-sm transition disabled:opacity-50 disabled:cursor-not-allowed"
                   >
-                    {submitting ? 'Placing order...' : 'Place Order'}
+                    {submitting
+                      ? 'Placing order...'
+                      : checkingStock
+                      ? 'Checking stock...'
+                      : stockIssues.length > 0
+                      ? '⚠ Out of Stock'
+                      : 'Place Order'}
                   </button>
 
                   <button
