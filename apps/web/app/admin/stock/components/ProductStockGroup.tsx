@@ -5,6 +5,7 @@ import { useState } from 'react';
 export interface VariantData {
   id: string;
   sku: string | null;
+  barcode: string | null;
   size: string;
   color: string;
   qty: number;
@@ -169,9 +170,14 @@ export function ProductStockGroup({ group, onVariantClick }: Props) {
                         : 'border-transparent bg-white hover:border-[#0F2A5C]/30 hover:shadow-[0_2px_8px_rgba(15,42,92,0.06)]'
                     }`}
                   >
-                    {/* Variant SKU - spans first 2 columns */}
-                    <div className="col-span-2 text-sm font-mono font-semibold text-[#0F2A5C] truncate">
-                      {v.sku || '—'}
+                    {/* Variant SKU + Barcode */}
+                    <div className="col-span-2 min-w-0">
+                      <div className="text-sm font-mono font-semibold text-[#0F2A5C] truncate">
+                        {v.sku || '—'}
+                      </div>
+                      <div className="text-[10px] font-mono text-[#8A8F98] truncate">
+                        {v.barcode || '—'}
+                      </div>
                     </div>
 
                     {/* Variant (size / color) */}

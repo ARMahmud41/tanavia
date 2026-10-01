@@ -15,6 +15,7 @@ import { MovementHistoryModal } from './components/MovementHistoryModal';
 interface Variant {
   id: string;
   sku: string | null;
+  barcode: string | null;
   size: string;
   color: string;
   qty: number;
@@ -102,6 +103,7 @@ export default function AdminStockPage() {
       variants: p.variants.map((v) => ({
         id: v.id,
         sku: v.sku,
+        barcode: v.barcode,
         size: v.size,
         color: v.color,
         qty: v.qty,
@@ -200,7 +202,7 @@ export default function AdminStockPage() {
   // ============================================
   function handleExportCSV() {
     const rows = [
-      ['Product', 'Category', 'Variant SKU', 'Size', 'Color', 'Stock', 'Reserved', 'Available', 'Reorder Level', 'Status'],
+      ['Product', 'Category', 'Variant SKU', 'Barcode', 'Size', 'Color', 'Stock', 'Reserved', 'Available', 'Reorder Level', 'Status'],
     ];
 
     for (const g of filteredGroups) {
@@ -211,6 +213,7 @@ export default function AdminStockPage() {
           g.productName,
           g.category || '',
           v.sku || '',
+          v.barcode || '',
           v.size,
           v.color,
           String(v.qty),

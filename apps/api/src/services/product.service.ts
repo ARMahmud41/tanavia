@@ -72,6 +72,7 @@ const PUBLIC_SELECT = {
     select: {
       id: true,
       sku: true,
+      barcode: true,
       size: true,
       color: true,
       qty: true,
@@ -143,7 +144,7 @@ export class ProductService {
         slug,
         status: 'ACTIVE',
         variants: {
-          create: input.variants.map((v) => {
+          create: input.variants.map((v, i) => {
             const sizeCode = v.size
               .toUpperCase()
               .replace(/[^A-Z0-9]/g, '')
@@ -152,11 +153,13 @@ export class ProductService {
               .toUpperCase()
               .replace(/[^A-Z0-9]/g, '')
               .slice(0, 3);
+            const serial = (i + 1).toString().padStart(2, '0');
             return {
               size: v.size,
               color: v.color,
               qty: v.qty,
               sku: `${sku}-${sizeCode}-${colorCode}`,
+              barcode: `${barcode}-${serial}`,
             };
           }),
         },
