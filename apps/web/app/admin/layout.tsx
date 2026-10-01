@@ -10,6 +10,7 @@ const NAV_ITEMS = [
   { href: '/admin/products', label: 'Products', icon: '👕' },
   { href: '/admin/orders', label: 'Orders', icon: '📦' },
   { href: '/admin/stock', label: 'Stock', icon: '📈' },
+  { href: '/admin/barcodes', label: 'Barcodes', icon: '🏷️' },
   { href: '/admin/staff', label: 'Staff', icon: '👥' },
   { href: '/admin/finance', label: 'Finance', icon: '💰' },
   { href: '/admin/courier', label: 'Courier', icon: '🚚' },
