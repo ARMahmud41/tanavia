@@ -177,6 +177,61 @@ textarea {
     max-width: 95% !important;
   }
 
+  /* ============================================ */
+  /* SHIPPING LABEL — two modes:                  */
+  /* MODE 1: Thermal (4"×6" = 100×150mm)          */
+  /* MODE 2: A4 Half (105×148mm)                  */
+  /* ============================================ */
+
+  /* Common container */
+  .print-area.size-shipping .label-grid {
+    grid-template-columns: auto !important;
+    gap: 0 !important;
+    justify-content: center !important;
+    padding: 0 !important;
+    margin: 0 !important;
+  }
+
+  .print-area.size-shipping .shipping-label {
+    box-sizing: border-box !important;
+    border: none !important;
+    border-radius: 0 !important;
+    background: #fff !important;
+    display: flex !important;
+    flex-direction: column !important;
+    justify-content: space-between !important;
+    break-inside: avoid !important;
+    page-break-inside: avoid !important;
+    font-family: Arial, Helvetica, sans-serif !important;
+    color: #000 !important;
+  }
+
+  .print-area.size-shipping .shipping-label * {
+    box-shadow: none !important;
+  }
+
+  /* ============ MODE 1: THERMAL ============ */
+  .print-area.size-shipping.mode-thermal .shipping-label {
+    width: 100mm !important;
+    height: 150mm !important;
+    padding: 5mm !important;
+    page-break-after: always !important;
+  }
+
+  /* ============ MODE 2: A4 HALF ============ */
+  .print-area.size-shipping.mode-a4 .shipping-label {
+    width: 105mm !important;
+    height: 148mm !important;
+    padding: 6mm !important;
+    border: 1px dashed #999 !important;
+  }
+
+  /* Thermal mode forces exact page size */
+  @page {
+    size: auto;
+    margin: 5mm;
+  }
+
   /* Hide chrome / controls */
   .no-print {
     display: none !important;

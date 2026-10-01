@@ -6,6 +6,7 @@ import { useParams } from 'next/navigation';
 import { api, ApiError } from '@/lib/api';
 import { getToken } from '@/lib/auth';
 import { tk, formatDateTime } from '@/lib/format';
+import { ShippingLabel } from '@/components/ShippingLabel';
 
 interface OrderItem {
   id: string;
@@ -90,6 +91,7 @@ export default function AdminOrderDetailPage() {
   const [showCancel, setShowCancel] = useState(false);
   const [cancelNote, setCancelNote] = useState('');
   const [previewImage, setPreviewImage] = useState<string | null>(null);
+  const [showShippingLabel, setShowShippingLabel] = useState(false);
 
   async function load() {
     setLoading(true);
@@ -237,7 +239,18 @@ export default function AdminOrderDetailPage() {
             </p>
           </div>
 
+          {/* Action buttons */}
           <div className="flex flex-wrap gap-2">
+            {/* Print Shipping Label — show for ONLINE orders not cancelled */}
+            {!isCancelled && order.channel === 'ONLINE' && (
+              <button
+                onClick={() => setShowShippingLabel(true)}
+                className="bg-[#F1F3F6] hover:bg-[#E3E6EB] text-[#0F2A5C] px-4 py-2 rounded-lg text-sm font-semibold transition"
+              >
+                🖨️ Print Label
+              </button>
+            )}
+
             {!isCancelled && next && (
               <button
                 onClick={() => updateStatus(next.value)}
@@ -529,6 +542,16 @@ export default function AdminOrderDetailPage() {
       </div>
 
       {/* ============================== */}
+      {/* Shipping Label Modal          */}
+      {/* ============================== */}
+      {showShippingLabel && (
+        <ShippingLabelModal
+          order={order}
+          onClose={() => setShowShippingLabel(false)}
+        />
+      )}
+
+      {/* ============================== */}
       {/* Image Preview Modal           */}
       {/* ============================== */}
       {previewImage && (
@@ -601,6 +624,132 @@ export default function AdminOrderDetailPage() {
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+// ============================================
+// Shipping Label Modal
+// ============================================
+function ShippingLabelModal({
+  order,
+  onClose,
+}: {
+  order: Order;
+  onClose: () => void;
+}) {
+  const [printMode, setPrintMode] = useState<'thermal' | 'a4'>('thermal');
+
+  function handlePrint() {
+    window.print();
+  }
+
+  // Parse items — some APIs may return items already structured
+  const items = (order.items || []).map((it) => ({
+    name: it.name,
+    size: it.size,
+    color: it.color,
+    qty: it.qty,
+    price: it.price,
+  }));
+
+  return (
+    <div
+      className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50"
+      onClick={onClose}
+    >
+      <div
+        className="bg-white rounded-lg max-w-3xl w-full max-h-[90vh] overflow-hidden flex flex-col"
+        onClick={(e) => e.stopPropagation()}
+      >
+        {/* Header */}
+        <div className="bg-[#0F2A5C] text-white px-5 py-4 flex items-start justify-between no-print">
+          <div>
+            <h2 className="font-serif text-lg font-semibold">
+              Shipping Label Preview
+            </h2>
+            <p className="text-xs text-white/70 mt-0.5">
+              Order {order.orderNumber}
+            </p>
+          </div>
+          <button
+            onClick={onClose}
+            className="text-white/70 hover:text-white text-2xl leading-none w-8 h-8 flex items-center justify-center rounded hover:bg-white/10 transition"
+            aria-label="Close"
+          >
+            ✕
+          </button>
+        </div>
+
+        {/* Print mode selector */}
+        <div className="px-5 py-3 bg-[#F1F4F9] border-b border-[#E8EBF0] flex items-center gap-4 no-print">
+          <div className="text-xs text-[#5A6270]">
+            📏 Print Mode:
+          </div>
+          <div className="flex gap-2">
+            <button
+              onClick={() => setPrintMode('thermal')}
+              className={`px-3 py-1.5 rounded-lg text-xs font-medium transition ${
+                printMode === 'thermal'
+                  ? 'bg-[#0F2A5C] text-white'
+                  : 'bg-white text-[#5A6270] border border-[#E3E6EB] hover:border-[#0F2A5C]'
+              }`}
+            >
+              Thermal (100×150mm)
+            </button>
+            <button
+              onClick={() => setPrintMode('a4')}
+              className={`px-3 py-1.5 rounded-lg text-xs font-medium transition ${
+                printMode === 'a4'
+                  ? 'bg-[#0F2A5C] text-white'
+                  : 'bg-white text-[#5A6270] border border-[#E3E6EB] hover:border-[#0F2A5C]'
+              }`}
+            >
+              A4 Half (105×148mm)
+            </button>
+          </div>
+          <div className="text-[10px] text-[#8A8F98] ml-auto">
+            {printMode === 'thermal'
+              ? '4"×6" thermal printer'
+              : 'Print on A4 paper — cut in half'}
+          </div>
+        </div>
+
+        {/* Label preview area */}
+        <div
+          className={`flex-1 overflow-y-auto p-8 bg-[#F1F4F9] flex justify-center print-area size-shipping mode-${printMode}`}
+        >
+          <div className="label-grid">
+            <ShippingLabel
+              orderNumber={order.orderNumber}
+              customerName={order.customerName}
+              customerPhone={order.customerPhone}
+              address={order.address || '—'}
+              district={order.district || '—'}
+              total={order.total}
+              paymentMethod={order.paymentMethod}
+              items={items}
+              note={order.note}
+            />
+          </div>
+        </div>
+
+        {/* Actions */}
+        <div className="px-5 py-4 bg-[#F1F4F9] border-t border-[#E8EBF0] flex justify-end gap-2 no-print">
+          <button
+            onClick={onClose}
+            className="px-4 py-2 rounded-lg text-sm font-medium border border-[#E3E6EB] text-[#5A6270] hover:bg-white transition"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={handlePrint}
+            className="bg-[#0F2A5C] hover:bg-[#0A1F45] text-white px-5 py-2 rounded-lg text-sm font-semibold transition"
+          >
+            🖨️ Print Shipping Label
+          </button>
+        </div>
+      </div>
     </div>
   );
 }
