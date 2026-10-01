@@ -92,3 +92,93 @@ textarea {
   margin: 0 auto;
   padding: 0 18px;
 }
+
+/* ============================================ */
+/* PRINT STYLES — Barcode Labels                */
+/* ============================================ */
+
+@media print {
+  /* Hide everything by default */
+  body * {
+    visibility: hidden;
+  }
+
+  /* Show only the print area and its children */
+  .print-area,
+  .print-area * {
+    visibility: visible;
+  }
+
+  /* Position the print area at the top of the page */
+  .print-area {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100%;
+    padding: 5mm;
+  }
+
+  /* Page setup */
+  @page {
+    size: A4;
+    margin: 5mm;
+  }
+
+  /* Label grid — 3 columns on A4 */
+  .print-area .label-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 3mm;
+  }
+
+  /* Individual label styling */
+  .print-area .barcode-label {
+    break-inside: avoid;
+    page-break-inside: avoid;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    padding: 3mm 2mm;
+    text-align: center;
+    background: #fff;
+  }
+
+  .print-area .barcode-label * {
+    box-shadow: none !important;
+  }
+
+  /* ---- Fixed Product Label Size (55 × 35 mm) ---- */
+  .print-area.size-product .label-grid {
+    grid-template-columns: repeat(3, 55mm) !important;
+    gap: 4mm !important;
+    padding: 3mm !important;
+  }
+
+  .print-area.size-product .barcode-label {
+    width: 55mm !important;
+    height: 35mm !important;
+    padding: 2mm !important;
+    box-sizing: border-box !important;
+    display: flex !important;
+    flex-direction: column !important;
+    justify-content: space-between !important;
+    overflow: hidden !important;
+  }
+
+  /* Compact typography inside the fixed-size label */
+  .print-area.size-product .barcode-label .font-mono {
+    font-size: 7px !important;
+    line-height: 1.1 !important;
+  }
+
+  .print-area.size-product .barcode-label svg {
+    max-height: 9mm !important;
+    height: auto !important;
+    width: auto !important;
+    max-width: 95% !important;
+  }
+
+  /* Hide chrome / controls */
+  .no-print {
+    display: none !important;
+  }
+}

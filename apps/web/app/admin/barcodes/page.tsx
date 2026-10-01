@@ -182,6 +182,11 @@ export default function AdminBarcodesPage() {
 }
 
 // ============================================
+// Fixed: Product Label Size (Standard Retail)
+// ============================================
+const PRODUCT_LABEL_SIZE = 'product' as const;
+
+// ============================================
 // Barcode Preview Modal
 // ============================================
 function BarcodePreviewModal({
@@ -209,7 +214,7 @@ function BarcodePreviewModal({
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
-        <div className="bg-[#0F2A5C] text-white px-5 py-4 flex items-start justify-between print:hidden">
+        <div className="bg-[#0F2A5C] text-white px-5 py-4 flex items-start justify-between no-print">
           <div>
             <h2 className="font-serif text-lg font-semibold">
               Barcode Preview
@@ -228,7 +233,11 @@ function BarcodePreviewModal({
         </div>
 
         {/* Options */}
-        <div className="px-5 py-3 bg-[#F1F4F9] border-b border-[#E8EBF0] flex flex-wrap items-center gap-4 print:hidden">
+        <div className="px-5 py-3 bg-[#F1F4F9] border-b border-[#E8EBF0] flex flex-wrap items-center gap-4 no-print">
+          <div className="text-xs text-[#5A6270]">
+            📏 Label Size: <strong>50 × 25 mm</strong> (Standard Retail)
+          </div>
+
           <div>
             <label className="text-xs text-[#5A6270] mr-2">Copies:</label>
             <select
@@ -264,8 +273,8 @@ function BarcodePreviewModal({
         </div>
 
         {/* Barcode list */}
-        <div className="flex-1 overflow-y-auto p-5 print:overflow-visible print:p-2">
-          <div className="grid grid-cols-2 md:grid-cols-3 print:grid-cols-3 gap-3 print:gap-2">
+        <div className="flex-1 overflow-y-auto p-5 print-area size-product">
+          <div className="grid grid-cols-2 md:grid-cols-3 gap-3 label-grid">
             {product.variants.flatMap((v) =>
               Array.from({ length: copies }, (_, i) => (
                 <BarcodeLabel
@@ -286,7 +295,7 @@ function BarcodePreviewModal({
         </div>
 
         {/* Actions */}
-        <div className="px-5 py-4 bg-[#F1F4F9] border-t border-[#E8EBF0] flex justify-end gap-2 print:hidden">
+        <div className="px-5 py-4 bg-[#F1F4F9] border-t border-[#E8EBF0] flex justify-end gap-2 no-print">
           <button
             onClick={onClose}
             className="px-4 py-2 rounded-lg text-sm font-medium border border-[#E3E6EB] text-[#5A6270] hover:bg-white transition"
@@ -342,7 +351,7 @@ function BarcodeLabel({
   }
 
   return (
-    <div className="border border-[#E8EBF0] rounded-lg p-3 text-center bg-white print:break-inside-avoid">
+    <div className="barcode-label border border-[#E8EBF0] rounded-lg p-3 text-center bg-white">
       {/* Barcode SVG — real Code128 */}
       <div className="flex justify-center items-center bg-white py-2 overflow-hidden">
         <Barcode
