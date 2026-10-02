@@ -237,3 +237,80 @@ textarea {
     display: none !important;
   }
 }
+/* ============================================ */
+/* Staff Panel Sidebar Scrollbar                */
+/* ============================================ */
+.staff-scroll::-webkit-scrollbar {
+  width: 6px;
+}
+
+.staff-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.staff-scroll::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.15);
+  border-radius: 3px;
+}
+
+.staff-scroll::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.25);
+}
+
+/* Firefox */
+.staff-scroll {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.15) transparent;
+}
+/* ============================================ */
+/* STAFF PANEL THEME — Light + Dark             */
+/* ============================================ */
+
+:root {
+  /* Light Mode (default) */
+  --staff-bg: #F1F5F9;
+  --staff-card: #FFFFFF;
+  --staff-card-hover: #F8FAFC;
+  --staff-text: #1E293B;
+  --staff-muted: #64748B;
+  --staff-primary: #1F4E79;
+  --staff-accent: #2F7D7A;
+  --staff-border: #E2E8F0;
+  --staff-success: #059669;
+  --staff-warning: #D97706;
+  --staff-danger: #DC2626;
+  --staff-tile-bg: #F1F5F9;
+}
+
+.dark {
+  /* Dark Mode */
+  --staff-bg: #0B1620;
+  --staff-card: #142230;
+  --staff-card-hover: #1A2B3D;
+  --staff-text: #E5EFF7;
+  --staff-muted: #7E9AB8;
+  --staff-primary: #2F7D7A;
+  --staff-accent: #7AC5B8;
+  --staff-border: #1F3244;
+  --staff-success: #34D399;
+  --staff-warning: #FBBF24;
+  --staff-danger: #F87171;
+  --staff-tile-bg: #1A2B3D;
+}
+
+.staff-shell {
+  background: var(--staff-bg);
+  color: var(--staff-text);
+  transition: background 0.2s, color 0.2s;
+}
+
+.staff-card {
+  background: var(--staff-card);
+  border: 1px solid var(--staff-border);
+  border-radius: 14px;
+  transition: background 0.2s, border-color 0.2s;
+}
+
+.staff-card:hover {
+  background: var(--staff-card-hover);
+}
