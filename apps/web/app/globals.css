@@ -314,3 +314,29 @@ textarea {
 .staff-card:hover {
   background: var(--staff-card-hover);
 }
+
+/* ============================================ */
+/* Light Scrollbar (for POS grids)              */
+/* ============================================ */
+.staff-scroll-light::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+.staff-scroll-light::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.staff-scroll-light::-webkit-scrollbar-thumb {
+  background: var(--staff-border);
+  border-radius: 3px;
+}
+
+.staff-scroll-light::-webkit-scrollbar-thumb:hover {
+  background: var(--staff-muted);
+}
+
+.staff-scroll-light {
+  scrollbar-width: thin;
+  scrollbar-color: var(--staff-border) transparent;
+}

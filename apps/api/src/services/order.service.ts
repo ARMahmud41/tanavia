@@ -1,4 +1,5 @@
 import type { PrismaClient, Prisma } from '@prisma/client';
+import { randomUUID } from 'node:crypto';
 import { StockService } from './stock.service.js';
 import { WhatsAppService } from './whatsapp.service.js';
 import { TelegramService } from './telegram.service.js';
@@ -164,7 +165,6 @@ export class OrderService {
       discount = Number(coupon.value);
       if (discount > subtotal) discount = subtotal;
     }
-    // SHIPPING type handled at delivery fee step
 
     return { discount, code: coupon.code };
   }
@@ -188,13 +188,6 @@ export class OrderService {
 
   /**
    * Place an ONLINE order (from website).
-   *
-   * Stock model:
-   * - On PLACED  → reserved += qty (qty untouched)
-   * - On SHIPPED → qty -= qty AND reserved -= qty
-   * - On CANCEL  → reserved -= qty (if not yet shipped)
-   *                OR qty += qty (if already shipped)
-   * This lets POS see "available = qty - reserved" and avoid overselling.
    */
   static async placeOnlineOrder(
     input: PlaceOrderInput,
@@ -211,9 +204,6 @@ export class OrderService {
 
     const order = await prisma.$transaction(
       async (tx) => {
-        // ============================================
-        // 1. Validate variants, build line items
-        // ============================================
         const lineItems: Array<{
           productId: string;
           variantId: string;
@@ -288,9 +278,6 @@ export class OrderService {
           subtotal += finalPrice * item.qty;
         }
 
-        // ============================================
-        // 2. Apply coupon
-        // ============================================
         let discount = 0;
         let couponCode: string | null = null;
         let isShippingCoupon = false;
@@ -306,9 +293,6 @@ export class OrderService {
           isShippingCoupon = coupon?.type === 'SHIPPING';
         }
 
-        // ============================================
-        // 3. Delivery fee
-        // ============================================
         const deliveryFee = this.computeDeliveryFee(
           subtotal,
           input.district,
@@ -320,86 +304,97 @@ export class OrderService {
 
         const total = Math.max(0, subtotal - discount) + deliveryFee;
 
-        // ============================================
-        // 4. Upsert customer
-        // ============================================
         let customer = await tx.user.findUnique({
           where: { phone: input.customerPhone },
           select: { id: true },
         });
 
         if (!customer) {
-          const crypto = await import('node:crypto');
           const placeholderEmail = `guest_${input.customerPhone}_${Date.now()}@tanavia.local`;
           customer = await tx.user.create({
             data: {
               name: input.customerName,
               email: placeholderEmail,
               phone: input.customerPhone,
-              passwordHash: crypto.randomBytes(32).toString('hex'),
+              passwordHash: randomUUID().replace(/-/g, '') + randomUUID().replace(/-/g, ''),
               role: 'CUSTOMER',
             },
             select: { id: true },
           });
         }
 
-        // ============================================
-        // 5. Generate order number
-        // ============================================
         const orderNumber = await this.generateOrderNumber(tx);
 
-        // ============================================
-        // 6. Create order
-        // ============================================
         const paymentStatus =
           input.paymentMethod === 'COD' ? 'WAITING' : 'REVIEW';
 
-        const createdOrder = await tx.order.create({
-          data: {
-            orderNumber,
-            channel: 'ONLINE',
-            userId: customer.id,
-            status: 'PLACED',
-            customerName: input.customerName,
-            customerPhone: input.customerPhone,
-            customerEmail: input.customerEmail || null,
-            address: input.address || null,
-            district: input.district || null,
-            note: input.note || null,
-            subtotal,
-            discount,
-            deliveryFee,
-            total,
-            couponCode,
-            paymentMethod: input.paymentMethod,
-            paymentStatus,
-            paymentTxId: input.paymentTxId || null,
-            items: {
-              create: lineItems.map((li) => ({
-                productId: li.productId,
-                name: li.name,
-                size: li.size,
-                color: li.color,
-                qty: li.qty,
-                price: li.price,
-                cost: li.cost,
-              })),
-            },
-            events: {
-              create: {
-                status: 'PLACED',
-                note: 'Order placed by customer',
-                actor: 'system',
-              },
-            },
-          },
+        // ============================================
+        // NOTE: ONLINE orders use `userId` scalar only — no shiftId, no
+        // nested `user: {connect}`. This avoids the Prisma 5.22.0 XOR bug.
+        // ============================================
+        const orderId = randomUUID();
+
+        await tx.$executeRaw`
+          INSERT INTO "Order" (
+            id, "orderNumber", channel, "userId", status,
+            "customerName", "customerPhone", "customerEmail",
+            address, district, note, subtotal, discount,
+            "deliveryFee", total, "couponCode",
+            "paymentMethod", "paymentStatus", "paymentTxId",
+            "createdAt", "updatedAt"
+          ) VALUES (
+            ${orderId},
+            ${orderNumber},
+            'ONLINE'::"OrderChannel",
+            ${customer.id},
+            'PLACED'::"OrderStatus",
+            ${input.customerName},
+            ${input.customerPhone},
+            ${input.customerEmail ?? null},
+            ${input.address ?? null},
+            ${input.district ?? null},
+            ${input.note ?? null},
+            ${subtotal},
+            ${discount},
+            ${deliveryFee},
+            ${total},
+            ${couponCode},
+            ${input.paymentMethod}::"PaymentMethod",
+            ${paymentStatus}::"PaymentStatus",
+            ${input.paymentTxId ?? null},
+            NOW(), NOW()
+          )
+        `;
+
+        for (const li of lineItems) {
+          await tx.$executeRaw`
+            INSERT INTO "OrderItem" (
+              id, "orderId", "productId", name, size, color, qty, price, cost
+            ) VALUES (
+              ${randomUUID()}, ${orderId}, ${li.productId},
+              ${li.name}, ${li.size}, ${li.color}, ${li.qty},
+              ${li.price}, ${li.cost}
+            )
+          `;
+        }
+
+        await tx.$executeRaw`
+          INSERT INTO "OrderEvent" (id, "orderId", status, note, actor, "createdAt")
+          VALUES (
+            ${randomUUID()}, ${orderId}, 'PLACED',
+            'Order placed by customer', 'system', NOW()
+          )
+        `;
+
+        const createdOrder = await tx.order.findUnique({
+          where: { id: orderId },
           select: ORDER_SELECT,
         });
 
-        // ============================================
-        // 7. Reserve stock (do NOT deduct qty yet)
-        //    qty is deducted when order becomes SHIPPED
-        // ============================================
+        if (!createdOrder) {
+          throw new Error('Order created but could not be fetched');
+        }
+
         for (const li of lineItems) {
           const variant = await tx.variant.findUnique({
             where: { id: li.variantId },
@@ -436,9 +431,6 @@ export class OrderService {
           );
         }
 
-        // ============================================
-        // 8. Increment coupon usage
-        // ============================================
         if (couponCode) {
           await tx.coupon.update({
             where: { code: couponCode },
@@ -454,9 +446,6 @@ export class OrderService {
       }
     );
 
-    // ============================================
-    // WhatsApp notification (fire & forget)
-    // ============================================
     WhatsAppService.notifyNewOrder({
       orderNumber: order.orderNumber,
       customerName: order.customerName,
@@ -470,9 +459,6 @@ export class OrderService {
       console.error('[Order] WhatsApp notification failed:', err);
     });
 
-    // ============================================
-    // Telegram notification (fire & forget)
-    // ============================================
     TelegramService.notifyNewOrder({
       orderNumber: order.orderNumber,
       customerName: order.customerName,
@@ -497,7 +483,7 @@ export class OrderService {
   }
 
   /**
-   * Load shop settings from DB (key-value Setting table).
+   * Load shop settings from DB.
    */
   private static async getSettings(prisma: PrismaClient) {
     const rows = await prisma.setting.findMany();
@@ -515,8 +501,10 @@ export class OrderService {
 
   /**
    * Place an OFFLINE order (POS / physical shop).
-   * Permanently deducts qty (skips reserved).
-   * Checks only available = qty - reserved.
+   *
+   * Uses $executeRaw to bypass the Prisma 5.22.0 XOR bug with
+   * checked/unchecked create inputs when both scalar FK (shiftId, userId)
+   * and nested relations (items, events) are present.
    */
   static async placeOfflineOrder(
     input: PlaceOfflineOrderInput,
@@ -604,49 +592,74 @@ export class OrderService {
         const total = subtotal - discount;
         const orderNumber = await this.generateOrderNumber(tx);
 
-        const order = await tx.order.create({
-          data: {
-            orderNumber,
-            channel: 'OFFLINE',
-            shiftId: input.shiftId || null,
+        // ============================================
+        // RAW INSERT — bypass Prisma checked/unchecked XOR bug
+        // ============================================
+        const orderId = randomUUID();
+
+        await tx.$executeRaw`
+          INSERT INTO "Order" (
+            id, "orderNumber", channel, "shiftId", "userId", status,
+            "customerName", "customerPhone", note, subtotal, discount,
+            "deliveryFee", total, "paymentMethod", "paymentStatus",
+            "createdAt", "updatedAt"
+          ) VALUES (
+            ${orderId},
+            ${orderNumber},
+            'OFFLINE'::"OrderChannel",
+            ${input.shiftId ?? null},
+            ${actorId ?? null},
+            'DELIVERED'::"OrderStatus",
+            ${input.customerName || 'Walk-in Customer'},
+            ${input.customerPhone || ''},
+            ${input.note ?? null},
+            ${subtotal},
+            ${discount},
+            0,
+            ${total},
+            ${input.paymentMethod}::"PaymentMethod",
+            'PAID'::"PaymentStatus",
+            NOW(), NOW()
+          )
+        `;
+
+        for (const li of lineItems) {
+          await tx.$executeRaw`
+            INSERT INTO "OrderItem" (
+              id, "orderId", "productId", name, size, color, qty, price, cost
+            ) VALUES (
+              ${randomUUID()}, ${orderId}, ${li.productId},
+              ${li.name}, ${li.size}, ${li.color}, ${li.qty},
+              ${li.price}, ${li.cost}
+            )
+          `;
+        }
+
+        for (const evt of [
+          { status: 'PLACED', note: 'Offline sale', actor: actorId || 'system' },
+          {
             status: 'DELIVERED',
-            customerName: input.customerName || 'Walk-in Customer',
-            customerPhone: input.customerPhone || null,
-            note: input.note || null,
-            subtotal,
-            discount,
-            deliveryFee: 0,
-            total,
-            paymentMethod: input.paymentMethod,
-            paymentStatus: 'PAID',
-            items: {
-              create: lineItems.map((li) => ({
-                productId: li.productId,
-                name: li.name,
-                size: li.size,
-                color: li.color,
-                qty: li.qty,
-                price: li.price,
-                cost: li.cost,
-              })),
-            },
-            events: {
-              create: [
-                {
-                  status: 'PLACED',
-                  note: 'Offline sale',
-                  actor: actorId || 'system',
-                },
-                {
-                  status: 'DELIVERED',
-                  note: 'Completed at counter',
-                  actor: actorId || 'system',
-                },
-              ],
-            },
+            note: 'Completed at counter',
+            actor: actorId || 'system',
           },
+        ]) {
+          await tx.$executeRaw`
+            INSERT INTO "OrderEvent" (id, "orderId", status, note, actor, "createdAt")
+            VALUES (
+              ${randomUUID()}, ${orderId}, ${evt.status},
+              ${evt.note}, ${evt.actor}, NOW()
+            )
+          `;
+        }
+
+        const order = await tx.order.findUnique({
+          where: { id: orderId },
           select: ORDER_SELECT,
         });
+
+        if (!order) {
+          throw new Error('Order created but could not be fetched');
+        }
 
         // Permanently deduct qty (POS sale)
         for (const li of lineItems) {
@@ -819,16 +832,7 @@ export class OrderService {
   }
 
   /**
-   * Update order status. Adds an event + adjusts stock intelligently.
-   *
-   * Stock transitions:
-   * - SHIPPED (from any prior status, ONLINE only)
-   *   → qty -= qty AND reserved -= qty
-   * - CANCELLED
-   *   → if already shipped/delivered (ONLINE): qty += qty
-   *   → otherwise (ONLINE not shipped): reserved -= qty
-   *   → OFFLINE orders don't need any restoration (stock already deducted,
-   *      but cancelled OFFLINE sales are rare — treat as return: qty += qty)
+   * Update order status.
    */
   static async updateStatus(
     id: string,
@@ -856,9 +860,6 @@ export class OrderService {
       throw new BadRequestError('Invalid status');
     }
 
-    // ============================================
-    // SHIPPED → deduct qty + release reserve (ONLINE only)
-    // ============================================
     if (
       status === 'SHIPPED' &&
       order.status !== 'SHIPPED' &&
@@ -927,9 +928,6 @@ export class OrderService {
       });
     }
 
-    // ============================================
-    // CANCELLED → release reserve OR restore qty
-    // ============================================
     if (status === 'CANCELLED' && order.status !== 'CANCELLED') {
       return prisma.$transaction(async (tx) => {
         const fullOrder = await tx.order.findUnique({
@@ -944,10 +942,6 @@ export class OrderService {
         });
         if (!fullOrder) throw new NotFoundError('Order not found');
 
-        // Was qty already permanently deducted?
-        // ONLINE + (SHIPPED or DELIVERED) → yes, restore qty
-        // OFFLINE (always DELIVERED)       → yes, restore qty
-        // ONLINE + (PLACED/CONFIRMED/PACKED) → no, only reserved
         const wasShipped =
           fullOrder.channel === 'OFFLINE' ||
           (fullOrder.channel === 'ONLINE' &&
@@ -1020,9 +1014,6 @@ export class OrderService {
       });
     }
 
-    // ============================================
-    // Normal status update
-    // ============================================
     return prisma.order.update({
       where: { id },
       data: {
