@@ -101,37 +101,34 @@ export async function orderRoutes(app: FastifyInstance) {
   );
 
   // ============================================
-  // GET /api/orders — admin: list with filters
+  // GET /api/orders — list with filters (role-aware)
   // ============================================
   app.get(
     '/',
     {
-      preHandler: [app.authenticate, requireAdmin],
+      preHandler: [app.authenticate, requireStaff],
     },
     async (req, reply) => {
-      const query = req.query as {
-        status?: string;
-        channel?: string;
-        paymentStatus?: string;
-        search?: string;
-        from?: string;
-        to?: string;
-        page?: string;
-        limit?: string;
-      };
+      const q = req.query as Record<string, string | undefined>;
+      const user = req.user as any;
 
-      const filters = {
-        status: query.status,
-        channel: query.channel as any,
-        paymentStatus: query.paymentStatus,
-        search: query.search,
-        from: query.from,
-        to: query.to,
-        page: query.page ? Number(query.page) : undefined,
-        limit: query.limit ? Number(query.limit) : undefined,
-      };
-
-      const result = await OrderService.list(filters, app.prisma);
+      const result = await OrderService.list(
+        {
+          status: q.status,
+          channel: q.channel as any,
+          paymentStatus: q.paymentStatus,
+          paymentMethod: q.paymentMethod,
+          search: q.q,
+          from: q.from,
+          to: q.to,
+          sort: q.sort as any,
+          page: q.page ? Number(q.page) : 1,
+          limit: q.limit ? Number(q.limit) : 25,
+          role: user.role,
+          userId: user.sub,
+        },
+        app.prisma
+      );
 
       return reply.send({
         success: true,
@@ -142,17 +139,151 @@ export async function orderRoutes(app: FastifyInstance) {
   );
 
   // ============================================
-  // GET /api/orders/:id — admin: detail
+  // GET /api/orders/counts — channel counts for segmented control
+  // ============================================
+  app.get(
+    '/counts',
+    {
+      preHandler: [app.authenticate, requireStaff],
+    },
+    async (req, reply) => {
+      const user = req.user as any;
+      const isAdmin = user.role === 'ADMIN';
+      const q = req.query as Record<string, string | undefined>;
+
+      // Build base where from query (excluding channel)
+      const baseWhere: any = {};
+      if (q.status) baseWhere.status = q.status;
+      if (q.paymentStatus) baseWhere.paymentStatus = q.paymentStatus;
+      if (q.paymentMethod) baseWhere.paymentMethod = q.paymentMethod;
+      if (q.q) {
+        baseWhere.OR = [
+          { orderNumber: { contains: q.q, mode: 'insensitive' } },
+          { customerName: { contains: q.q, mode: 'insensitive' } },
+          { customerPhone: { contains: q.q, mode: 'insensitive' } },
+        ];
+      }
+      if (q.from || q.to) {
+        baseWhere.createdAt = {};
+        if (q.from) baseWhere.createdAt.gte = new Date(q.from);
+        if (q.to) {
+          const to = new Date(q.to);
+          to.setHours(23, 59, 59, 999);
+          baseWhere.createdAt.lte = to;
+        }
+      }
+
+      const [all, online, offline] = await Promise.all([
+        isAdmin
+          ? app.prisma.order.count({ where: { ...baseWhere } })
+          : app.prisma.order.count({
+              where: { ...baseWhere, channel: 'OFFLINE', createdById: user.sub },
+            }),
+        app.prisma.order.count({
+          where: { ...baseWhere, channel: 'ONLINE' },
+        }),
+        app.prisma.order.count({
+          where: isAdmin
+            ? { ...baseWhere, channel: 'OFFLINE' }
+            : { ...baseWhere, channel: 'OFFLINE', createdById: user.sub },
+        }),
+      ]);
+
+      return reply.send({
+        success: true,
+        data: { all, online, offline },
+      });
+    }
+  );
+
+  // ============================================
+  // GET /api/orders/stats — dashboard stats
+  // ============================================
+  app.get(
+    '/stats',
+    {
+      preHandler: [app.authenticate, requireStaff],
+    },
+    async (req, reply) => {
+      const now = new Date();
+      const startOfDay = new Date(now);
+      startOfDay.setHours(0, 0, 0, 0);
+
+      const [todayOrders, needsAction, todayRevenue, codToCollect] =
+        await Promise.all([
+          // Today's order count
+          app.prisma.order.count({
+            where: { createdAt: { gte: startOfDay } },
+          }),
+
+          // Needs action: PLACED or REVIEW payment
+          app.prisma.order.count({
+            where: {
+              OR: [
+                { status: 'PLACED' },
+                { paymentStatus: 'REVIEW' },
+              ],
+            },
+          }),
+
+          // Today's revenue: PAID or DELIVERED today
+          app.prisma.order.aggregate({
+            where: {
+              createdAt: { gte: startOfDay },
+              OR: [
+                { paymentStatus: 'PAID' },
+                { status: 'DELIVERED' },
+              ],
+            },
+            _sum: { total: true },
+          }),
+
+          // COD to collect: DELIVERED but not settled
+          app.prisma.order.aggregate({
+            where: {
+              paymentMethod: 'COD',
+              status: 'DELIVERED',
+              codSettledAt: null,
+            },
+            _sum: { total: true },
+          }),
+        ]);
+
+      return reply.send({
+        success: true,
+        data: {
+          todayOrders,
+          needsAction,
+          todayRevenue: Number(todayRevenue._sum.total || 0),
+          codToCollect: Number(codToCollect._sum.total || 0),
+        },
+      });
+    }
+  );
+
+  // ============================================
+  // GET /api/orders/:id — staff: role-aware detail
   // ============================================
   app.get(
     '/:id',
     {
-      preHandler: [app.authenticate, requireAdmin],
+      preHandler: [app.authenticate, requireStaff],
     },
     async (req, reply) => {
       const { id } = req.params as { id: string };
 
-      const order = await OrderService.getById(id, app.prisma);
+      const user = req.user as any;
+      console.log('[DEBUG] getById route - user:', JSON.stringify({
+        sub: user?.sub,
+        id: user?.id,
+        role: user?.role,
+        email: user?.email,
+      }));
+
+      const order = await OrderService.getById(id, app.prisma, {
+        role: user.role,
+        userId: user.sub,
+      });
 
       return reply.send({
         success: true,

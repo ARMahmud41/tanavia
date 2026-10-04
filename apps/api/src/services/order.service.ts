@@ -46,9 +46,11 @@ interface ListFilters {
   status?: string;
   channel?: OrderChannel;
   paymentStatus?: string;
+  paymentMethod?: string;
   search?: string;
   from?: string;
   to?: string;
+  sort?: 'newest' | 'oldest' | 'highest' | 'lowest';
   page?: number;
   limit?: number;
 }
@@ -707,22 +709,151 @@ export class OrderService {
   }
 
   /**
-   * Get order by ID (admin).
+   * Get order by ID (role-aware).
+   *
+   * - ADMIN: full data including cost/profit/adminNote
+   * - STAFF: hidden fields (cost, profit, adminNote) removed from response
+   *          Staff can only see their OWN offline sales, or ONLINE (read-only)
    */
-  static async getById(id: string, prisma: PrismaClient) {
+  static async getById(
+    id: string,
+    prisma: PrismaClient,
+    options?: { role?: 'STAFF' | 'ADMIN'; userId?: string }
+  ) {
+    const isAdmin = options?.role === 'ADMIN';
+    const userId = options?.userId;
+
     const order = await prisma.order.findUnique({
       where: { id },
       select: {
-        ...ORDER_SELECT,
+        id: true,
+        orderNumber: true,
+        channel: true,
+        status: true,
+        customerName: true,
+        customerPhone: true,
+        customerEmail: true,
+        address: true,
+        district: true,
+        note: true,
+        subtotal: true,
+        discount: true,
+        deliveryFee: true,
+        total: true,
+        couponCode: true,
+        paymentMethod: true,
+        paymentStatus: true,
+        paymentTxId: true,
+        senderPhone: isAdmin ? true : false,
+        verifiedAt: isAdmin ? true : false,
+        codSettledAt: isAdmin ? true : false,
+        courier: true,
+        consignmentId: true,
+        courierStatus: true,
+        trackingUrl: true,
+        createdAt: true,
+        updatedAt: true,
+        shiftId: isAdmin ? true : false,
+        createdById: true, // always select — needed for authorization check
+        cancelReason: isAdmin ? true : false,
+        adminNote: isAdmin ? true : false,
         user: {
           select: { id: true, name: true, email: true, phone: true },
+        },
+        items: {
+          select: {
+            id: true,
+            productId: true,
+            name: true,
+            size: true,
+            color: true,
+            qty: true,
+            price: true,
+            cost: isAdmin ? true : false,
+            product: {
+              select: {
+                id: true,
+                name: true,
+                slug: true,
+                images: true,
+              },
+            },
+          },
         },
         events: {
           orderBy: { createdAt: 'asc' },
         },
+        transactions: isAdmin
+          ? {
+              select: {
+                id: true,
+                type: true,
+                status: true,
+                amount: true,
+                method: true,
+                reference: true,
+                createdAt: true,
+              },
+            }
+          : false,
       },
     });
+
     if (!order) throw new NotFoundError('Order not found');
+
+    // Role-based authorization
+    if (!isAdmin) {
+      console.log('[DEBUG] getById service:', JSON.stringify({
+        orderId: order.id,
+        orderCreatedById: order.createdById,
+        requestUserId: userId,
+        isAdmin,
+        match: order.createdById === userId,
+      }));
+
+      // STAFF can only see:
+      // - Their own OFFLINE sales
+      // - Any ONLINE order (read-only)
+      if (order.channel === 'OFFLINE' && order.createdById !== userId) {
+        throw new NotFoundError('Order not found');
+      }
+    }
+
+    // Compute profit (admin only)
+    if (isAdmin) {
+      const items = (order as any).items || [];
+      const profit =
+        items.reduce(
+          (sum: number, it: any) =>
+            sum + (Number(it.price) - Number(it.cost || 0)) * it.qty,
+          0
+        ) - Number(order.discount || 0);
+
+      return { ...order, profit };
+    }
+
+    // ─── Strip internal fields before returning to STAFF ───
+    if (!isAdmin) {
+      // Remove sensitive/internal fields from response
+      const sanitized = { ...order } as any;
+      delete sanitized.createdById;
+      delete sanitized.shiftId;
+      delete sanitized.cancelReason;
+      delete sanitized.adminNote;
+      delete sanitized.senderPhone;
+      delete sanitized.verifiedAt;
+      delete sanitized.codSettledAt;
+      delete sanitized.transactions;
+      // Also strip cost from items
+      if (Array.isArray(sanitized.items)) {
+        sanitized.items = sanitized.items.map((it: any) => {
+          const { cost, ...rest } = it;
+          return rest;
+        });
+      }
+      return sanitized;
+    }
+
     return order;
   }
 
@@ -763,23 +894,58 @@ export class OrderService {
   }
 
   /**
-   * List orders (admin).
+   * List orders (role-aware).
+   *
+   * - ADMIN: sees all orders (ONLINE + OFFLINE), with cost/profit/adminNote
+   * - STAFF: sees only their own OFFLINE sales, or ONLINE (read-only, no cost)
+   *          Never sees unitCost, profit, adminNote from other staff
    */
-  static async list(filters: ListFilters, prisma: PrismaClient) {
+  static async list(
+    filters: ListFilters & {
+      role?: 'STAFF' | 'ADMIN';
+      userId?: string;
+    },
+    prisma: PrismaClient
+  ) {
     const page = Math.max(1, filters.page || 1);
-    const limit = Math.min(100, Math.max(1, filters.limit || 20));
+    const limit = Math.min(100, Math.max(1, filters.limit || 25));
     const skip = (page - 1) * limit;
+
+    const isAdmin = filters.role === 'ADMIN';
+    const userId = filters.userId;
 
     const where: Prisma.OrderWhereInput = {};
 
+    // ---- Channel scoping ----
+    if (isAdmin) {
+      // Admin: respect channel filter or show all
+      if (filters.channel) where.channel = filters.channel;
+    } else {
+      // Staff: default OFFLINE + own sales
+      if (filters.channel === 'ONLINE') {
+        where.channel = 'ONLINE';
+      } else {
+        where.channel = 'OFFLINE';
+        if (userId) where.createdById = userId;
+      }
+    }
+
+    // ---- Status filter ----
     if (filters.status) {
       where.status = filters.status.toUpperCase() as any;
     }
-    if (filters.channel) where.channel = filters.channel;
+
+    // ---- Payment status filter ----
     if (filters.paymentStatus) {
       where.paymentStatus = filters.paymentStatus.toUpperCase() as any;
     }
 
+    // ---- Payment method filter ----
+    if (filters.paymentMethod) {
+      where.paymentMethod = filters.paymentMethod.toUpperCase() as any;
+    }
+
+    // ---- Search ----
     if (filters.search) {
       const q = filters.search.trim();
       where.OR = [
@@ -789,6 +955,7 @@ export class OrderService {
       ];
     }
 
+    // ---- Date range ----
     if (filters.from || filters.to) {
       const createdAt: Prisma.DateTimeFilter = {};
       if (filters.from) createdAt.gte = new Date(filters.from);
@@ -800,25 +967,90 @@ export class OrderService {
       where.createdAt = createdAt;
     }
 
+    // ---- Sort ----
+    let orderBy: Prisma.OrderOrderByWithRelationInput = {
+      createdAt: 'desc',
+    };
+    if (filters.sort === 'oldest') orderBy = { createdAt: 'asc' };
+    else if (filters.sort === 'highest') orderBy = { total: 'desc' };
+    else if (filters.sort === 'lowest') orderBy = { total: 'asc' };
+
+    // ---- Role-based select ----
+    const select: Prisma.OrderSelect = {
+      id: true,
+      orderNumber: true,
+      channel: true,
+      status: true,
+      customerName: true,
+      customerPhone: true,
+      customerEmail: true,
+      district: true,
+      address: isAdmin ? true : false,
+      subtotal: true,
+      discount: true,
+      deliveryFee: true,
+      total: true,
+      paymentMethod: true,
+      paymentStatus: true,
+      paymentTxId: isAdmin ? true : false,
+      senderPhone: isAdmin ? true : false,
+      courier: true,
+      consignmentId: true,
+      courierStatus: true,
+      trackingUrl: isAdmin ? true : false,
+      createdAt: true,
+      updatedAt: true,
+      shiftId: isAdmin ? true : false,
+      createdById: isAdmin ? true : false,
+      cancelReason: isAdmin ? true : false,
+      adminNote: false, // never returned in list; only in detail for admin
+      items: {
+        select: {
+          id: true,
+          productId: true,
+          name: true,
+          size: true,
+          color: true,
+          qty: true,
+          price: true,
+          cost: isAdmin ? true : false, // ← staff never sees cost
+          product: {
+            select: {
+              id: true,
+              name: true,
+              slug: true,
+              images: true,
+            },
+          },
+        },
+      },
+      _count: { select: { items: true } },
+    };
+
     const [items, total] = await Promise.all([
       prisma.order.findMany({
         where,
-        orderBy: { createdAt: 'desc' },
+        orderBy,
         skip,
         take: limit,
-        select: ORDER_SELECT,
+        select,
       }),
       prisma.order.count({ where }),
     ]);
 
-    const enriched = items.map((o) => ({
-      ...o,
-      profit:
-        o.items.reduce(
-          (sum, it) => sum + (Number(it.price) - Number(it.cost)) * it.qty,
-          0
-        ) - Number(o.discount || 0),
-    }));
+    // ---- Enrich with profit (admin only) ----
+    const enriched = items.map((o: any) => {
+      if (!isAdmin) return o;
+      const itemProfit = (o.items || []).reduce(
+        (sum: number, it: any) =>
+          sum + (Number(it.price) - Number(it.cost || 0)) * it.qty,
+        0
+      );
+      return {
+        ...o,
+        profit: itemProfit - Number(o.discount || 0),
+      };
+    });
 
     return {
       items: enriched,

@@ -9,7 +9,7 @@ export interface User {
   name: string;
   email: string;
   phone?: string | null;
-  role: 'CUSTOMER' | 'STAFF' | 'MANAGER' | 'ADMIN';
+  role: 'CUSTOMER' | 'STAFF' | 'ADMIN';
 }
 
 interface AuthResponse {
@@ -19,6 +19,22 @@ interface AuthResponse {
 
 const TOKEN_KEY = 'tanavia_access_token';
 const USER_KEY = 'tanavia_user';
+
+/**
+ * Set role cookie for middleware (Edge runtime).
+ * This is NOT authentication — only used for routing.
+ */
+export function setRoleCookie(role: string): void {
+  if (typeof document === 'undefined') return;
+  // 7 days expiry
+  const expires = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toUTCString();
+  document.cookie = `tanavia_role=${role}; expires=${expires}; path=/; SameSite=Lax`;
+}
+
+export function clearRoleCookie(): void {
+  if (typeof document === 'undefined') return;
+  document.cookie = 'tanavia_role=; expires=Thu, 01 Jan 1970 00:00:00 GMT; path=/';
+}
 
 export function getToken(): string | null {
   if (typeof window === 'undefined') return null;
@@ -62,6 +78,7 @@ export async function login(email: string, password: string): Promise<User> {
 
   setToken(res.data.accessToken);
   setCurrentUser(res.data.user);
+  setRoleCookie(res.data.user.role);
   return res.data.user;
 }
 
@@ -77,6 +94,7 @@ export async function register(input: {
 
   setToken(res.data.accessToken);
   setCurrentUser(res.data.user);
+  setRoleCookie(res.data.user.role);
   return res.data.user;
 }
 
@@ -87,6 +105,7 @@ export async function logout(): Promise<void> {
     // ignore
   }
   clearToken();
+  clearRoleCookie();
 }
 
 export function isAuthenticated(): boolean {
@@ -100,5 +119,5 @@ export function isAdmin(): boolean {
 
 export function isStaff(): boolean {
   const u = getCurrentUser();
-  return u?.role === 'STAFF' || u?.role === 'MANAGER' || u?.role === 'ADMIN';
+  return u?.role === 'STAFF' || u?.role === 'ADMIN';
 }

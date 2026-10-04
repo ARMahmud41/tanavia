@@ -1,31 +1,19 @@
-import 'dotenv/config';
 import { buildApp } from './app.js';
 
-const PORT = Number(process.env.PORT) || 4000;
-const HOST = process.env.HOST || '0.0.0.0';
-
 async function start() {
-  const app = await buildApp();
-
   try {
-    await app.listen({ port: PORT, host: HOST });
-    app.log.info(`TANAVIA API running at http://localhost:${PORT}`);
-    app.log.info(`Health check: http://localhost:${PORT}/health`);
-    const uploadDir = process.env.UPLOAD_DIR || 'uploads';
-    app.log.info(`Uploads: http://localhost:${PORT}/${uploadDir}/`);
+    const app = await buildApp();
+    const port = Number(process.env.PORT) || 4000;
+    const host = process.env.HOST || '0.0.0.0';
+
+    await app.listen({ port, host });
+
+    app.log.info(`✅ TANAVIA API running at http://localhost:${port}`);
+    app.log.info(`✅ Health check: http://localhost:${port}/health`);
   } catch (err) {
-    app.log.error(err);
+    console.error('❌ Server startup failed:', err);
     process.exit(1);
   }
-
-  const shutdown = async (signal: string) => {
-    app.log.info(`${signal} received, shutting down gracefully...`);
-    await app.close();
-    process.exit(0);
-  };
-
-  process.on('SIGTERM', () => shutdown('SIGTERM'));
-  process.on('SIGINT', () => shutdown('SIGINT'));
 }
 
 start();

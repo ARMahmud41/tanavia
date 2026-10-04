@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { login, isAdmin } from '@/lib/auth';
+import { login, isAdmin, setRoleCookie } from '@/lib/auth';
 
 export default function AdminLoginPage() {
   const router = useRouter();
@@ -24,6 +24,7 @@ export default function AdminLoginPage() {
         setLoading(false);
         return;
       }
+      setRoleCookie('ADMIN');
       router.push('/admin/dashboard');
     } catch (err) {
       const message =

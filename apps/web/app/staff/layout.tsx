@@ -14,7 +14,7 @@ interface MenuItem {
   label: string;
   badge?: number;
   badgeColor?: 'red' | 'amber';
-  roles: Array<'ADMIN' | 'MANAGER' | 'STAFF'>;
+  roles: Array<'ADMIN' | 'STAFF'>;
 }
 
 interface MenuGroup {
@@ -31,7 +31,7 @@ const MENU_GROUPS: MenuGroup[] = [
       {
         href: '/staff',
         label: 'Dashboard',
-        roles: ['ADMIN', 'MANAGER', 'STAFF'],
+        roles: ['ADMIN', 'STAFF'],
       },
     ],
   },
@@ -44,24 +44,24 @@ const MENU_GROUPS: MenuGroup[] = [
         label: 'Orders',
         badge: 12,
         badgeColor: 'red',
-        roles: ['ADMIN', 'MANAGER', 'STAFF'],
+        roles: ['ADMIN', 'STAFF'],
       },
       {
         href: '/staff/pos',
         label: 'POS sales',
-        roles: ['ADMIN', 'MANAGER', 'STAFF'],
+        roles: ['ADMIN', 'STAFF'],
       },
       {
         href: '/staff/returns',
         label: 'Returns & refunds',
         badge: 2,
         badgeColor: 'red',
-        roles: ['ADMIN', 'MANAGER'],
+        roles: ['ADMIN', 'STAFF'],
       },
       {
         href: '/staff/customers',
         label: 'Customers',
-        roles: ['ADMIN', 'MANAGER'],
+        roles: ['ADMIN', 'STAFF'],
       },
     ],
   },
@@ -72,29 +72,29 @@ const MENU_GROUPS: MenuGroup[] = [
       {
         href: '/staff/products',
         label: 'Products',
-        roles: ['ADMIN', 'MANAGER'],
+        roles: ['ADMIN', 'STAFF'],
       },
       {
         href: '/staff/categories',
         label: 'Categories',
-        roles: ['ADMIN', 'MANAGER'],
+        roles: ['ADMIN', 'STAFF'],
       },
       {
         href: '/staff/inventory',
         label: 'Inventory',
         badge: 4,
         badgeColor: 'amber',
-        roles: ['ADMIN', 'MANAGER', 'STAFF'],
+        roles: ['ADMIN', 'STAFF'],
       },
       {
         href: '/staff/barcodes',
         label: 'Barcode labels',
-        roles: ['ADMIN', 'MANAGER'],
+        roles: ['ADMIN', 'STAFF'],
       },
       {
         href: '/staff/purchases',
         label: 'Purchases',
-        roles: ['ADMIN', 'MANAGER'],
+        roles: ['ADMIN', 'STAFF'],
       },
     ],
   },
@@ -105,17 +105,17 @@ const MENU_GROUPS: MenuGroup[] = [
       {
         href: '/staff/couriers',
         label: 'Couriers',
-        roles: ['ADMIN', 'MANAGER'],
+        roles: ['ADMIN', 'STAFF'],
       },
       {
         href: '/staff/shipping-labels',
         label: 'Shipping labels',
-        roles: ['ADMIN', 'MANAGER', 'STAFF'],
+        roles: ['ADMIN', 'STAFF'],
       },
       {
         href: '/staff/cod-settlement',
         label: 'COD settlement',
-        roles: ['ADMIN', 'MANAGER'],
+        roles: ['ADMIN', 'STAFF'],
       },
     ],
   },
@@ -126,17 +126,17 @@ const MENU_GROUPS: MenuGroup[] = [
       {
         href: '/staff/coupons',
         label: 'Coupons',
-        roles: ['ADMIN', 'MANAGER'],
+        roles: ['ADMIN', 'STAFF'],
       },
       {
         href: '/staff/banners',
         label: 'Banners',
-        roles: ['ADMIN', 'MANAGER'],
+        roles: ['ADMIN', 'STAFF'],
       },
       {
         href: '/staff/reviews',
         label: 'Reviews',
-        roles: ['ADMIN', 'MANAGER'],
+        roles: ['ADMIN', 'STAFF'],
       },
     ],
   },
@@ -147,17 +147,17 @@ const MENU_GROUPS: MenuGroup[] = [
       {
         href: '/staff/payments',
         label: 'Payments',
-        roles: ['ADMIN', 'MANAGER'],
+        roles: ['ADMIN', 'STAFF'],
       },
       {
         href: '/staff/expenses',
         label: 'Expenses',
-        roles: ['ADMIN', 'MANAGER'],
+        roles: ['ADMIN', 'STAFF'],
       },
       {
         href: '/staff/reports',
         label: 'Reports',
-        roles: ['ADMIN', 'MANAGER'],
+        roles: ['ADMIN', 'STAFF'],
       },
     ],
   },
@@ -173,7 +173,7 @@ const MENU_GROUPS: MenuGroup[] = [
       {
         href: '/staff/shifts',
         label: 'Shifts',
-        roles: ['ADMIN', 'MANAGER'],
+        roles: ['ADMIN', 'STAFF'],
       },
       {
         href: '/staff/audit',
@@ -194,7 +194,7 @@ const MENU_GROUPS: MenuGroup[] = [
       {
         href: '/staff/notifications',
         label: 'Notifications',
-        roles: ['ADMIN', 'MANAGER'],
+        roles: ['ADMIN', 'STAFF'],
       },
       {
         href: '/staff/backup',
@@ -414,7 +414,7 @@ function filterMenuByRole(groups: MenuGroup[], role: string): MenuGroup[] {
     .map((group) => ({
       ...group,
       items: group.items.filter((item) =>
-        item.roles.includes(role as 'ADMIN' | 'MANAGER' | 'STAFF')
+        item.roles.includes(role as 'ADMIN' | 'STAFF')
       ),
     }))
     .filter((group) => group.items.length > 0);
@@ -429,7 +429,7 @@ export default function StaffLayout({
   const pathname = usePathname();
   const [ready, setReady] = useState(false);
   const [userName, setUserName] = useState('');
-  const [userRole, setUserRole] = useState<string>('');
+  const [userRole, setUserRole] = useState<string>('STAFF');
 
   const isLoginPage = pathname === '/staff/login';
 
@@ -445,9 +445,7 @@ export default function StaffLayout({
     if (
       !user ||
       !token ||
-      (user.role !== 'STAFF' &&
-        user.role !== 'MANAGER' &&
-        user.role !== 'ADMIN')
+      (user.role !== 'STAFF' && user.role !== 'ADMIN')
     ) {
       localStorage.removeItem('tanavia_access_token');
       localStorage.removeItem('tanavia_user');
@@ -502,7 +500,7 @@ export default function StaffLayout({
                 TANAVIA
               </div>
               <div className="text-[9px] text-[#7E9AB8] tracking-[0.18em] uppercase mt-1 font-medium">
-                Staff Panel
+                {userRole === 'ADMIN' ? 'Admin Panel' : 'Staff Panel'}
               </div>
             </div>
           </Link>

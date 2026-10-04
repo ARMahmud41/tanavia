@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { login } from '@/lib/auth';
+import { login, setRoleCookie } from '@/lib/auth';
 
 export default function StaffLoginPage() {
   const router = useRouter();
@@ -20,12 +20,8 @@ export default function StaffLoginPage() {
     try {
       const user = await login(email.trim(), password);
 
-      // Role check — only STAFF, MANAGER, ADMIN
-      if (
-        user.role !== 'STAFF' &&
-        user.role !== 'MANAGER' &&
-        user.role !== 'ADMIN'
-      ) {
+      // Role check — only STAFF and ADMIN
+      if (user.role !== 'STAFF' && user.role !== 'ADMIN') {
         setError(
           'This account does not have staff access. Please contact your manager.'
         );
@@ -33,6 +29,7 @@ export default function StaffLoginPage() {
         return;
       }
 
+      setRoleCookie(user.role);
       router.push('/staff/pos');
     } catch (err) {
       const message =

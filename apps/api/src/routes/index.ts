@@ -3,6 +3,7 @@ import { authRoutes } from './auth.js';
 import { productRoutes } from './products.js';
 import { dropRoutes } from './drops.js';
 import { orderRoutes } from './orders.js';
+import { returnRoutes } from './returns.js';
 import { stockRoutes } from './stock.js';
 import { staffRoutes } from './staff.js';
 import { financeRoutes } from './finance.js';
@@ -23,6 +24,7 @@ export async function registerRoutes(app: FastifyInstance) {
   await app.register(productRoutes, { prefix: '/api/products' });
   await app.register(dropRoutes, { prefix: '/api/drops' });
   await app.register(orderRoutes, { prefix: '/api/orders' });
+  await app.register(returnRoutes, { prefix: '/api/returns' });
   await app.register(stockRoutes, { prefix: '/api/stock' });
   await app.register(staffRoutes, { prefix: '/api/staff' });
   await app.register(financeRoutes, { prefix: '/api/finance' });
