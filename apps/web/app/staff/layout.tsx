@@ -75,11 +75,6 @@ const MENU_GROUPS: MenuGroup[] = [
         roles: ['ADMIN', 'STAFF'],
       },
       {
-        href: '/staff/categories',
-        label: 'Categories',
-        roles: ['ADMIN', 'STAFF'],
-      },
-      {
         href: '/staff/inventory',
         label: 'Inventory',
         badge: 4,

@@ -309,20 +309,23 @@ model ProductImage {
 }
 
 model Variant {
-  id           String   @id @default(cuid())
+  id           String    @id @default(cuid())
   productId    String
-  sku          String?  @unique
-  barcode      String?  @unique
+  sku          String?   @unique
+  barcode      String?   @unique
   size         String
   color        String
-  qty          Int      @default(0)
-  reserved     Int      @default(0)
-  reorderLevel Int      @default(5)
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  qty          Int       @default(0)
+  reserved     Int       @default(0)
+  reorderLevel Int       @default(5)
+  cost         Decimal?  @db.Decimal(10, 2)  // moving average cost
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
 
-  product    Product         @relation(fields: [productId], references: [id], onDelete: Cascade)
-  stockMoves StockMovement[]
+  product         Product               @relation(fields: [productId], references: [id], onDelete: Cascade)
+  stockMoves      StockMovement[]
+  purchaseItems   PurchaseOrderItem[]
+  staffReports    StaffReport[]         @relation("VariantReports")
 
   @@unique([productId, size, color])
   @@index([productId])
@@ -859,6 +862,7 @@ model PurchaseOrderItem {
   id         String        @id @default(cuid())
   purchaseId String
   productId  String
+  variantId  String?
   qty        Int
   unitCost   Decimal       @db.Decimal(10, 2)
   total      Decimal       @db.Decimal(10, 2)
@@ -867,9 +871,11 @@ model PurchaseOrderItem {
 
   purchase PurchaseOrder @relation(fields: [purchaseId], references: [id], onDelete: Cascade)
   product  Product       @relation(fields: [productId], references: [id])
+  variant  Variant?      @relation(fields: [variantId], references: [id])
 
   @@index([purchaseId])
   @@index([productId])
+  @@index([variantId])
 }
 
 // ============================================
@@ -965,6 +971,10 @@ enum ReportType {
   MISSING
   PRICE_ERROR
   CUSTOMER_ISSUE
+  LOW_STOCK
+  DAMAGED_ITEM
+  COUNT_MISMATCH
+  WRONG_BARCODE
   OTHER
 }
 
@@ -984,6 +994,7 @@ model StaffReport {
   title       String
   description String       @db.Text
   productId   String?
+  variantId   String?
   orderId     String?
   proofUrl    String?
   adminNote   String?      @db.Text
@@ -991,10 +1002,12 @@ model StaffReport {
   resolvedAt  DateTime?
   updatedAt   DateTime     @updatedAt
 
-  reporter User  @relation("ReportedBy", fields: [reportedBy], references: [id])
-  resolver User? @relation("ResolvedBy", fields: [resolvedBy], references: [id])
+  reporter User     @relation("ReportedBy", fields: [reportedBy], references: [id])
+  resolver User?    @relation("ResolvedBy", fields: [resolvedBy], references: [id])
+  variant  Variant? @relation("VariantReports", fields: [variantId], references: [id])
 
   @@index([reportedBy])
+  @@index([variantId])
   @@index([status, createdAt])
   @@index([type])
 }

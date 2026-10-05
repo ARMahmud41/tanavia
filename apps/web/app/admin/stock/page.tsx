@@ -255,13 +255,19 @@ export default function AdminStockPage() {
       <div className="flex flex-wrap items-start justify-between gap-3 mb-6">
         <div>
           <h1 className="font-serif text-3xl font-semibold text-[#0F2A5C] mb-1">
-            Stock Management
+            Stock
           </h1>
           <p className="text-[#8A8F98] text-sm">
             Live stock across all variants — grouped by product
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
+          <Link
+            href="/admin/inventory"
+            className="bg-[#0F2A5C] hover:bg-[#0A1F45] text-white px-4 py-2.5 rounded-lg text-sm font-semibold transition inline-flex items-center gap-2"
+          >
+            📦 Open Inventory
+          </Link>
           <Link
             href="/admin/stock/movements"
             className="bg-[#F1F3F6] hover:bg-[#E3E6EB] text-[#0F2A5C] px-4 py-2 rounded-lg text-sm font-semibold transition inline-flex items-center gap-2"

@@ -20,7 +20,10 @@ interface Product {
   name: string;
   sku: string;
   barcode: string | null;
-  category: string | null;
+  category:
+    | string
+    | { id: string; name: string; nameBn?: string | null; slug: string }
+    | null;
   images: string[];
   price: number | string;
   discount: number;
@@ -148,7 +151,10 @@ export default function AdminBarcodesPage() {
                 <div className="flex-1 min-w-0">
                   <div className="font-medium text-ink">{p.name}</div>
                   <div className="text-xs text-[#8A8F98] mt-0.5">
-                    {p.category || '—'} · {p.sku} · {p.variants.length} variants
+                    {typeof p.category === 'string'
+                      ? p.category
+                      : p.category?.name || '—'}{' '}
+                    · {p.sku} · {p.variants.length} variants
                   </div>
                   {p.barcode && (
                     <div className="text-xs font-mono text-[#0F2A5C] mt-1">
