@@ -17,10 +17,20 @@ export interface ProductForPOS {
   id: string;
   name: string;
   slug: string;
-  category: string | null;
+  category:
+    | string
+    | { id: string; name: string; nameBn?: string | null; slug: string }
+    | null;
   price: number | string;
   discount: number;
-  images: string[];
+  images?: string[];
+  productImages?: Array<{
+    id: string;
+    url: string;
+    alt?: string | null;
+    position: number;
+    isPrimary: boolean;
+  }>;
   variants: ProductVariant[];
 }
 
@@ -41,9 +51,13 @@ export function ProductGrid({ products, onSelectVariant, loading }: Props) {
     let list = products;
 
     if (category !== 'All') {
-      list = list.filter(
-        (p) => (p.category || '').toLowerCase() === category.toLowerCase()
-      );
+      list = list.filter((p) => {
+        const catName =
+          typeof p.category === 'string'
+            ? p.category
+            : p.category?.name || '';
+        return catName.toLowerCase() === category.toLowerCase();
+      });
     }
 
     if (search.trim()) {
@@ -68,6 +82,19 @@ export function ProductGrid({ products, onSelectVariant, loading }: Props) {
         Loading products...
       </div>
     );
+  }
+
+  // Helper — get primary image URL
+  function getImageUrl(p: ProductForPOS): string | null {
+    if (p.productImages && p.productImages.length > 0) {
+      const primary =
+        p.productImages.find((i) => i.isPrimary) || p.productImages[0];
+      return primary.url;
+    }
+    if (p.images && p.images.length > 0) {
+      return p.images[0];
+    }
+    return null;
   }
 
   return (
@@ -120,15 +147,15 @@ export function ProductGrid({ products, onSelectVariant, loading }: Props) {
               >
                 {/* Image */}
                 <div className="aspect-square bg-[var(--staff-tile-bg)] relative">
-                  {p.images?.[0] ? (
+                  {getImageUrl(p) ? (
                     // eslint-disable-next-line @next/next/no-img-element
                     <img
-                      src={p.images[0]}
+                      src={getImageUrl(p)!}
                       alt={p.name}
                       className="w-full h-full object-cover"
                     />
                   ) : (
-                    <div className="w-full h-full flex items-center justify-center text-[var(--staff-muted)] text-xs">
+                    <div className="w-full h-full flex items-center justify-center text-xs text-[var(--staff-muted)]">
                       No img
                     </div>
                   )}
@@ -145,7 +172,10 @@ export function ProductGrid({ products, onSelectVariant, loading }: Props) {
                     {p.name}
                   </div>
                   <div className="text-[10px] text-[var(--staff-muted)] mt-0.5 mb-2">
-                    {p.category || '—'} · {p.variants.length} var
+                    {typeof p.category === 'string'
+                      ? p.category
+                      : p.category?.name || '—'}{' '}
+                    · {p.variants.length} var
                   </div>
 
                   <div className="flex items-center justify-between mb-2">

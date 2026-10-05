@@ -28,13 +28,27 @@ export async function buildApp() {
   // ============================================
   // Prisma
   // ============================================
-  const prisma = new PrismaClient();
+  const prisma = new PrismaClient({
+    log:
+      process.env.NODE_ENV === 'development'
+        ? ['warn', 'error']
+        : ['error'],
+    datasources: {
+      db: {
+        url: process.env.DATABASE_URL,
+      },
+    },
+  });
   await prisma.$connect();
   app.decorate('prisma', prisma);
   app.addHook('onClose', async () => {
     await prisma.$disconnect();
   });
   app.log.info('✅ Prisma connected to database');
+
+  // Register keep-alive plugin (Neon cold start mitigation)
+  const { default: keepAlivePlugin } = await import('./plugins/keep-alive.js');
+  await app.register(keepAlivePlugin);
 
   // ============================================
   // Security / Core plugins

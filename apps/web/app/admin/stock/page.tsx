@@ -1,5 +1,6 @@
 'use client';
 
+import Link from 'next/link';
 import { useEffect, useMemo, useState } from 'react';
 import { api, ApiError } from '@/lib/api';
 import { getToken } from '@/lib/auth';
@@ -27,7 +28,10 @@ interface Product {
   id: string;
   name: string;
   sku: string;
-  category: string | null;
+  category:
+    | string
+    | { id: string; name: string; nameBn?: string | null; slug: string }
+    | null;
   active: boolean;
   images: string[];
   variants: Variant[];
@@ -98,7 +102,10 @@ export default function AdminStockPage() {
       productId: p.id,
       productName: p.name,
       sku: p.sku,
-      category: p.category,
+      category:
+        typeof p.category === 'string'
+          ? p.category
+          : p.category?.name || null,
       images: p.images || [],
       variants: p.variants.map((v) => ({
         id: v.id,
@@ -254,7 +261,13 @@ export default function AdminStockPage() {
             Live stock across all variants — grouped by product
           </p>
         </div>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
+          <Link
+            href="/admin/stock/movements"
+            className="bg-[#F1F3F6] hover:bg-[#E3E6EB] text-[#0F2A5C] px-4 py-2 rounded-lg text-sm font-semibold transition inline-flex items-center gap-2"
+          >
+            📊 View Movements
+          </Link>
           <button
             onClick={() => setExpandedAll((v) => !v)}
             className="bg-[#F1F3F6] hover:bg-[#E3E6EB] text-[#0F2A5C] px-4 py-2.5 rounded-lg text-sm font-semibold transition"

@@ -62,9 +62,76 @@ model User {
   auditLogs       AuditLog[]
   cashDrawers     CashDrawer[]
 
+  // Customer module relations
+  customerProfile  Customer?       @relation("UserCustomerProfile")
+  authoredNotes    CustomerNote[]
+  blockedCustomers Customer[]      @relation("CustomerBlockedBy")
+
   @@index([email])
   @@index([phone])
   @@index([role])
+}
+
+// ============================================
+// CUSTOMER (shop + website)
+// ============================================
+
+model Customer {
+  id            String    @id @default(cuid())
+  name          String
+  phone         String    @unique  // normalized: 01XXXXXXXXX
+  email         String?
+  userId        String?   @unique  // link to User account (optional)
+
+  blockedAt     DateTime?
+  blockedReason String?   @db.Text
+  blockedById   String?
+
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  user          User?     @relation("UserCustomerProfile", fields: [userId], references: [id])
+  blockedBy     User?     @relation("CustomerBlockedBy", fields: [blockedById], references: [id])
+
+  orders        Order[]
+  notes         CustomerNote[]
+  tags          CustomerTag[]
+
+  @@index([phone])
+  @@index([userId])
+  @@index([createdAt])
+  @@index([blockedAt])
+}
+
+model CustomerNote {
+  id         String   @id @default(cuid())
+  customerId String
+  authorId   String
+  text       String   @db.Text
+  pinned     Boolean  @default(false)
+
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  customer   Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  author     User     @relation(fields: [authorId], references: [id])
+
+  @@index([customerId])
+  @@index([authorId])
+  @@index([pinned])
+}
+
+model CustomerTag {
+  id         String   @id @default(cuid())
+  customerId String
+  tag        String
+  createdAt  DateTime @default(now())
+
+  customer   Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+
+  @@unique([customerId, tag])
+  @@index([customerId])
+  @@index([tag])
 }
 
 // ============================================
@@ -133,6 +200,31 @@ model Shift {
 }
 
 // ============================================
+// CATEGORY
+// ============================================
+
+model Category {
+  id          String   @id @default(cuid())
+  name        String   @unique
+  nameBn      String?
+  slug        String   @unique
+  description String?  @db.Text
+  image       String?
+  position    Int      @default(0)
+  featured    Boolean  @default(false)
+  active      Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  products    Product[]
+
+  @@index([slug])
+  @@index([position])
+  @@index([featured, active])
+  @@index([active])
+}
+
+// ============================================
 // PRODUCT (with variants)
 // ============================================
 
@@ -149,7 +241,9 @@ model Product {
   nameBn        String?
   description   String        @db.Text
   descriptionBn String?       @db.Text
-  category      String
+  categoryId    String?
+  category      Category?     @relation(fields: [categoryId], references: [id])
+  categoryLegacy String?      @map("category")  // old string field — keep for migration
   brand         String        @default("TANAVIA")
   sku           String        @unique
   barcode       String        @unique
@@ -166,10 +260,17 @@ model Product {
   rating        Float         @default(0)
   reviewCount   Int           @default(0)
   soldCount     Int           @default(0)
-  lowStockAt    Int           @default(5)
-  createdAt     DateTime      @default(now())
-  updatedAt     DateTime      @updatedAt
 
+  metaTitle       String?
+  metaDescription String?       @db.Text
+  deletedAt       DateTime?
+  deletedById     String?
+  deletedReason   String?       @db.Text
+  lowStockAt      Int           @default(5)
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+
+  productImages ProductImage[]
   variants      Variant[]
   orderItems    OrderItem[]
   stockMoves    StockMovement[]
@@ -178,12 +279,33 @@ model Product {
   dropProducts  DropProduct[]
   purchaseItems PurchaseOrderItem[]
 
-  @@index([category, active])
+  @@index([categoryId, active])
   @@index([featured, active])
   @@index([barcode])
   @@index([sku])
   @@index([slug])
   @@index([status])
+  @@index([deletedAt])
+}
+
+// ============================================
+// PRODUCT IMAGE (ordered, with alt + primary)
+// ============================================
+
+model ProductImage {
+  id        String   @id @default(cuid())
+  productId String
+  url       String
+  alt       String?
+  position  Int      @default(0)
+  isPrimary Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  product   Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@index([productId])
+  @@index([productId, isPrimary])
+  @@index([productId, position])
 }
 
 model Variant {
@@ -299,6 +421,7 @@ model Order {
   orderNumber   String       @unique
   channel       OrderChannel @default(ONLINE)
   userId        String?
+  customerId    String?
   shiftId       String?
   createdById   String?
   status        OrderStatus  @default(PLACED)
@@ -335,6 +458,7 @@ model Order {
   updatedAt DateTime @updatedAt
 
   user         User?         @relation(fields: [userId], references: [id])
+  customer     Customer?     @relation(fields: [customerId], references: [id])
   shift        Shift?        @relation(fields: [shiftId], references: [id])
   items        OrderItem[]
   events       OrderEvent[]
@@ -346,6 +470,7 @@ model Order {
   @@index([customerPhone])
   @@index([orderNumber])
   @@index([userId])
+  @@index([customerId])
   @@index([shiftId])
 }
 
@@ -751,24 +876,35 @@ model PurchaseOrderItem {
 // REVIEW
 // ============================================
 
+enum ReviewStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
 model Review {
-  id        String   @id @default(cuid())
-  productId String
-  userId    String?
-  name      String
-  rating    Int
-  comment   String?  @db.Text
-  images    String[]
-  approved  Boolean  @default(false)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id         String        @id @default(cuid())
+  productId  String
+  userId     String?
+  name       String
+  rating     Int
+  comment    String?       @db.Text
+  images     String[]
+  approved   Boolean       @default(false)  // legacy — keep for migration
+  status     ReviewStatus  @default(PENDING)
+  reply      String?       @db.Text
+  repliedAt  DateTime?
+  createdAt  DateTime      @default(now())
+  updatedAt  DateTime      @updatedAt
 
   product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
   user    User?   @relation(fields: [userId], references: [id])
 
+  @@index([productId, status])
   @@index([productId, approved])
   @@index([userId])
   @@index([rating])
+  @@index([status, createdAt])
 }
 
 // ============================================

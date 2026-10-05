@@ -8,9 +8,11 @@ import { getCurrentUser, isAdmin, logout } from '@/lib/auth';
 const NAV_ITEMS = [
   { href: '/admin/dashboard', label: 'Dashboard', icon: '📊' },
   { href: '/admin/products', label: 'Products', icon: '👕' },
+  { href: '/admin/categories', label: 'Categories', icon: '📁' },
   { href: '/admin/orders', label: 'Orders', icon: '📦' },
   { href: '/admin/stock', label: 'Stock', icon: '📈' },
   { href: '/admin/returns', label: 'Returns', icon: '↩️' },
+  { href: '/admin/customers', label: 'Customers', icon: '👥' },
   { href: '/admin/barcodes', label: 'Barcodes', icon: '🏷️' },
   { href: '/admin/staff', label: 'Staff', icon: '👥' },
   { href: '/admin/finance', label: 'Finance', icon: '💰' },

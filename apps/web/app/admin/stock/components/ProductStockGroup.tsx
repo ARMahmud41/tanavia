@@ -17,7 +17,10 @@ export interface ProductGroup {
   productId: string;
   productName: string;
   sku: string;
-  category: string | null;
+  category:
+    | string
+    | { id: string; name: string; nameBn?: string | null; slug: string }
+    | null;
   images: string[];
   variants: VariantData[];
 }
@@ -94,7 +97,11 @@ export function ProductStockGroup({ group, onVariantClick }: Props) {
             <div>
               <div className="font-medium text-ink">{group.productName}</div>
               <div className="text-xs text-[#8A8F98]">
-                {group.category || '—'} · {group.sku} ·{' '}
+                {typeof group.category === 'string'
+                  ? group.category
+                  : group.category?.name || '—'}{' '}
+                ·{' '}
+                {group.sku} ·{' '}
                 {group.variants.length} variants
               </div>
             </div>
