@@ -1,12 +1,12 @@
 import type { FastifyInstance } from 'fastify';
 import { PurchaseService } from '../services/purchase.service.js';
-import { requireAdmin } from '../middleware/require-role.js';
+import { requireAdmin, requireStaff } from '../middleware/require-role.js';
 
 export async function purchaseRoutes(app: FastifyInstance) {
   // GET /api/purchases
   app.get(
     '/',
-    { preHandler: [app.authenticate, requireAdmin] },
+    { preHandler: [app.authenticate, requireStaff] },
     async (req, reply) => {
       const q = req.query as Record<string, string | undefined>;
       const result = await PurchaseService.list(
