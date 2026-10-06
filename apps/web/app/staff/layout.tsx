@@ -144,6 +144,11 @@ const MENU_GROUPS: MenuGroup[] = [
         label: 'My Shift',
         roles: ['ADMIN', 'STAFF'],
       },
+      {
+        href: '/staff/payments',
+        label: 'Payments',
+        roles: ['ADMIN', 'STAFF'],
+      },
     ],
   },
   {
@@ -311,6 +316,12 @@ function Icon({ name }: { name: string }) {
         <circle cx="12" cy="15" r="2"/>
       </svg>
     ),
+    payments: (
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+        <rect x="3" y="6" width="18" height="12" rx="2" />
+        <path d="M3 10h18" />
+      </svg>
+    ),
     staff: (
       <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
         <circle cx="9" cy="8" r="3" />
@@ -372,6 +383,7 @@ function getIconKey(href: string): string {
   if (href.includes('banners')) return 'banners';
   if (href.includes('reviews')) return 'reviews';
   if (href.includes('/finance')) return 'finance';
+  if (href.includes('payments')) return 'payments';
   if (href.includes('staff')) return 'staff';
   if (href.includes('shifts')) return 'shifts';
   if (href.includes('audit')) return 'audit';

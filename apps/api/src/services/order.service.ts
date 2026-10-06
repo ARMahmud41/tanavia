@@ -36,7 +36,9 @@ interface PlaceOfflineOrderInput {
   customerName?: string;
   customerPhone?: string;
   note?: string;
-  paymentMethod: 'CASH' | 'BKASH' | 'NAGAD' | 'CARD';
+  paymentMethod: 'CASH' | 'BKASH' | 'NAGAD' | 'ROCKET' | 'CARD';
+  paymentTxId?: string;
+  senderPhone?: string;
   items: OrderItemInput[];
   discountAmount?: number;
   shiftId?: string;
@@ -521,6 +523,51 @@ export class OrderService {
       throw new BadRequestError('At least one item is required');
     }
 
+    // ==========================================
+    // PAYMENT CONFIRMATION LOGIC (3 scenarios)
+    // ==========================================
+    const actor = actorId
+      ? await prisma.user.findUnique({
+          where: { id: actorId },
+          select: { id: true, role: true },
+        })
+      : null;
+
+    const isAdmin = actor?.role === 'ADMIN';
+    const method = input.paymentMethod;
+    const isCashOrCard = method === 'CASH' || method === 'CARD';
+    const isMobile = method === 'BKASH' || method === 'NAGAD' || method === 'ROCKET';
+
+    let resolvedPaymentStatus: 'PAID' | 'PENDING';
+    let resolvedVerifiedAt: Date | null = null;
+    let resolvedVerifiedBy: string | null = null;
+
+    if (isAdmin || isCashOrCard) {
+      // Scenario 1 (admin) + Scenario 3 (cash) + Scenario 4 (card) → auto-confirm
+      resolvedPaymentStatus = 'PAID';
+      resolvedVerifiedAt = new Date();
+      resolvedVerifiedBy = actorId || null;
+    } else if (isMobile) {
+      // Scenario 2 — staff + bKash/Nagad/Rocket → pending admin verify
+      if (!input.paymentTxId || input.paymentTxId.trim().length < 4) {
+        throw new BadRequestError(
+          'Transaction ID is required for bKash/Nagad/Rocket'
+        );
+      }
+      const senderPhone = input.senderPhone || input.customerPhone;
+      if (!senderPhone) {
+        throw new BadRequestError(
+          'Sender phone is required for mobile payment'
+        );
+      }
+      resolvedPaymentStatus = 'PENDING';
+    } else {
+      // Fallback — shouldn't happen
+      resolvedPaymentStatus = 'PAID';
+      resolvedVerifiedAt = new Date();
+      resolvedVerifiedBy = actorId || null;
+    }
+
     return prisma.$transaction(
       async (tx) => {
         const lineItems: Array<{
@@ -605,6 +652,7 @@ export class OrderService {
             id, "orderNumber", channel, "shiftId", "userId", status,
             "customerName", "customerPhone", note, subtotal, discount,
             "deliveryFee", total, "paymentMethod", "paymentStatus",
+            "paymentTxId", "senderPhone", "verifiedAt",
             "createdAt", "updatedAt"
           ) VALUES (
             ${orderId},
@@ -621,7 +669,10 @@ export class OrderService {
             0,
             ${total},
             ${input.paymentMethod}::"PaymentMethod",
-            'PAID'::"PaymentStatus",
+            ${resolvedPaymentStatus}::"PaymentStatus",
+            ${input.paymentTxId ?? null},
+            ${input.senderPhone ?? input.customerPhone ?? null},
+            ${resolvedVerifiedAt},
             NOW(), NOW()
           )
         `;

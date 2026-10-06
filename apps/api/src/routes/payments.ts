@@ -1,7 +1,14 @@
 import type { FastifyInstance } from 'fastify';
-import { requireAdmin } from '../middleware/require-role.js';
+import {
+  requireAdmin,
+  requireStaff,
+} from '../middleware/require-role.js';
+import { BadRequestError, NotFoundError } from '../utils/errors.js';
 import crypto from 'node:crypto';
 
+// ============================================
+// Payment Settings (existing)
+// ============================================
 interface PaymentSettings {
   cod: boolean;
   bkash: { number: string; type: 'Merchant' | 'Personal'; on: boolean };
@@ -32,8 +39,10 @@ const DEFAULT_SETTINGS: PaymentSettings = {
 
 export async function paymentRoutes(app: FastifyInstance) {
   // ============================================
-  // GET /api/payments/settings — admin
+  // SETTINGS — existing (admin)
   // ============================================
+
+  // GET /api/payments/settings — admin
   app.get(
     '/settings',
     { preHandler: [app.authenticate, requireAdmin] },
@@ -44,7 +53,6 @@ export async function paymentRoutes(app: FastifyInstance) {
 
       const settings = (row?.value as PaymentSettings) || DEFAULT_SETTINGS;
 
-      // Mask sensitive keys
       const masked: PaymentSettings = {
         ...settings,
         card: {
@@ -57,9 +65,7 @@ export async function paymentRoutes(app: FastifyInstance) {
     }
   );
 
-  // ============================================
   // POST /api/payments/settings — admin
-  // ============================================
   app.post(
     '/settings',
     { preHandler: [app.authenticate, requireAdmin] },
@@ -71,7 +77,6 @@ export async function paymentRoutes(app: FastifyInstance) {
       });
       const current = (row?.value as PaymentSettings) || DEFAULT_SETTINGS;
 
-      // Merge card settings carefully — don't overwrite password if masked
       const cardUpdate = input.card || {};
       const cardMerged = {
         ...current.card,
@@ -99,9 +104,7 @@ export async function paymentRoutes(app: FastifyInstance) {
     }
   );
 
-  // ============================================
   // GET /api/payments/methods — public
-  // ============================================
   app.get('/methods', async (_req, reply) => {
     const row = await app.prisma.setting.findUnique({
       where: { key: 'pay' },
@@ -128,9 +131,7 @@ export async function paymentRoutes(app: FastifyInstance) {
     });
   });
 
-  // ============================================
   // POST /api/payments/init/:orderId — initiate payment
-  // ============================================
   app.post('/init/:orderId', async (req, reply) => {
     const { orderId } = req.params as { orderId: string };
 
@@ -169,7 +170,6 @@ export async function paymentRoutes(app: FastifyInstance) {
     });
     const settings = (row?.value as PaymentSettings) || DEFAULT_SETTINGS;
 
-    // For CARD payments
     if (order.paymentMethod === 'CARD') {
       if (!settings.card.on) {
         return reply.code(400).send({
@@ -179,8 +179,6 @@ export async function paymentRoutes(app: FastifyInstance) {
         });
       }
 
-      // TODO: real SSLCommerz API call
-      // For now, generate a fake session token
       const sessionToken = crypto.randomBytes(16).toString('hex');
 
       return reply.send({
@@ -192,7 +190,6 @@ export async function paymentRoutes(app: FastifyInstance) {
           provider: settings.card.provider,
           sandbox: settings.card.sandbox,
           sessionToken,
-          // In production this URL comes from SSLCommerz response
           paymentUrl: settings.card.sandbox
             ? `https://sandbox.sslcommerz.com/Ecommerce/checkout/${sessionToken}`
             : `https://securepay.sslcommerz.com/Ecommerce/checkout/${sessionToken}`,
@@ -200,7 +197,6 @@ export async function paymentRoutes(app: FastifyInstance) {
       });
     }
 
-    // For other methods — return instructions
     const instructions: Record<string, { number: string; type: string }> = {};
 
     if (order.paymentMethod === 'BKASH') {
@@ -231,4 +227,174 @@ export async function paymentRoutes(app: FastifyInstance) {
       },
     });
   });
+
+  // ============================================
+  // ADMIN — Payment verification (new)
+  // ============================================
+
+  // GET /api/payments — combined list (online + POS)
+  app.get(
+    '/',
+    { preHandler: [app.authenticate, requireStaff] },
+    async (req, reply) => {
+      const q = req.query as Record<string, string | undefined>;
+      const page = q.page ? Number(q.page) : 1;
+      const limit = q.limit ? Number(q.limit) : 25;
+
+      const where: any = {};
+      if (q.channel && q.channel !== 'ALL') where.channel = q.channel;
+      if (q.method) where.paymentMethod = q.method;
+      if (q.status) where.paymentStatus = q.status;
+      if (q.search?.trim()) {
+        where.OR = [
+          { orderNumber: { contains: q.search.trim(), mode: 'insensitive' } },
+          { paymentTxId: { contains: q.search.trim(), mode: 'insensitive' } },
+          { customerPhone: { contains: q.search.trim() } },
+          { customerName: { contains: q.search.trim(), mode: 'insensitive' } },
+        ];
+      }
+
+      const [items, total] = await Promise.all([
+        app.prisma.order.findMany({
+          where,
+          orderBy: { createdAt: 'desc' },
+          skip: (page - 1) * limit,
+          take: limit,
+          select: {
+            id: true,
+            orderNumber: true,
+            channel: true,
+            status: true,
+            customerName: true,
+            customerPhone: true,
+            total: true,
+            paymentMethod: true,
+            paymentStatus: true,
+            paymentTxId: true,
+            senderPhone: true,
+            verifiedAt: true,
+            adminNote: true,
+            createdAt: true,
+            userId: true,
+          },
+        }),
+        app.prisma.order.count({ where }),
+      ]);
+
+      return reply.send({
+        success: true,
+        data: items,
+        pagination: {
+          page,
+          limit,
+          total,
+          totalPages: Math.ceil(total / limit),
+        },
+      });
+    }
+  );
+
+  // GET /api/payments/stats — summary
+  app.get(
+    '/stats',
+    { preHandler: [app.authenticate, requireStaff] },
+    async (_req, reply) => {
+      const [waiting, review, problems, verified] = await Promise.all([
+        app.prisma.order.count({ where: { paymentStatus: 'PENDING' } }),
+        app.prisma.order.count({ where: { paymentStatus: 'REVIEW' } }),
+        app.prisma.order.count({ where: { paymentStatus: 'FAILED' } }),
+        app.prisma.order.aggregate({
+          where: {
+            paymentStatus: 'PAID',
+            verifiedAt: {
+              gte: new Date(Date.now() - 24 * 60 * 60 * 1000),
+            },
+          },
+          _sum: { total: true },
+        }),
+      ]);
+
+      return reply.send({
+        success: true,
+        data: {
+          waiting,
+          review,
+          problems,
+          verified24h: Number(verified._sum.total || 0),
+        },
+      });
+    }
+  );
+
+  // PATCH /api/payments/:id/verify (ADMIN)
+  app.patch(
+    '/:id/verify',
+    { preHandler: [app.authenticate, requireAdmin] },
+    async (req, reply) => {
+      const { id } = req.params as { id: string };
+      const user = req.user as any;
+      const actorId = user?.id || user?.sub;
+
+      const order = await app.prisma.order.findUnique({ where: { id } });
+      if (!order) throw new NotFoundError('Order not found');
+      if (order.paymentStatus === 'PAID') {
+        throw new BadRequestError('Already verified');
+      }
+
+      const updated = await app.prisma.order.update({
+        where: { id },
+        data: {
+          paymentStatus: 'PAID',
+          verifiedAt: new Date(),
+        },
+      });
+
+      await app.prisma
+        .$executeRaw`
+          INSERT INTO "OrderEvent" (id, "orderId", status, note, actor, "createdAt")
+          VALUES (gen_random_uuid()::text, ${id}, 'PAYMENT_VERIFIED',
+                  'bKash/Nagad payment verified', ${actorId || 'system'}, NOW())
+        `
+        .catch(() => {});
+
+      return reply.send({ success: true, data: updated });
+    }
+  );
+
+  // PATCH /api/payments/:id/reject (ADMIN)
+  app.patch(
+    '/:id/reject',
+    { preHandler: [app.authenticate, requireAdmin] },
+    async (req, reply) => {
+      const { id } = req.params as { id: string };
+      const body = req.body as { reason?: string };
+      const user = req.user as any;
+      const actorId = user?.id || user?.sub;
+
+      if (!body.reason?.trim()) {
+        throw new BadRequestError('Rejection reason is required');
+      }
+
+      const order = await app.prisma.order.findUnique({ where: { id } });
+      if (!order) throw new NotFoundError('Order not found');
+
+      const updated = await app.prisma.order.update({
+        where: { id },
+        data: {
+          paymentStatus: 'FAILED',
+          adminNote: body.reason.trim(),
+        },
+      });
+
+      await app.prisma
+        .$executeRaw`
+          INSERT INTO "OrderEvent" (id, "orderId", status, note, actor, "createdAt")
+          VALUES (gen_random_uuid()::text, ${id}, 'PAYMENT_REJECTED',
+                  ${body.reason.trim()}, ${actorId || 'system'}, NOW())
+        `
+        .catch(() => {});
+
+      return reply.send({ success: true, data: updated });
+    }
+  );
 }
