@@ -1,5 +1,6 @@
 import type { FastifyInstance } from 'fastify';
 import { FinanceService } from '../services/finance.service.js';
+import { CashOutService } from '../services/cashout.service.js';
 import { requireAdmin, requireStaff } from '../middleware/require-role.js';
 
 export async function financeRoutes(app: FastifyInstance) {
@@ -208,6 +209,137 @@ export async function financeRoutes(app: FastifyInstance) {
         data: result.items,
         pagination: result.pagination,
       });
+    }
+  );
+
+  // ============================================
+  // CASH-OUT APPROVAL ROUTES
+  // ============================================
+
+  // POST /api/finance/cash-outs (STAFF creates PENDING)
+  app.post(
+    '/cash-outs',
+    { preHandler: [app.authenticate, requireStaff] },
+    async (req, reply) => {
+      const user = req.user as { id?: string; sub?: string; userId?: string } | undefined;
+      const actorId = user?.id || user?.sub || user?.userId;
+      const body = req.body as {
+        amount: number;
+        reason?: string;
+        description?: string;
+        category?: string;
+      };
+
+      const expense = await CashOutService.create(
+        {
+          amount: Number(body.amount),
+          description: body.reason || body.description || 'Cash out',
+          category: body.category,
+        },
+        app.prisma,
+        actorId
+      );
+
+      return reply.code(201).send({ success: true, data: expense });
+    }
+  );
+
+  // GET /api/finance/cash-outs/pending (ADMIN inbox)
+  app.get(
+    '/cash-outs/pending',
+    { preHandler: [app.authenticate, requireAdmin] },
+    async (_req, reply) => {
+      const items = await CashOutService.listPending(app.prisma);
+      return reply.send({ success: true, data: items });
+    }
+  );
+
+  // PATCH /api/finance/cash-outs/:id/approve (ADMIN)
+  app.patch(
+    '/cash-outs/:id/approve',
+    { preHandler: [app.authenticate, requireAdmin] },
+    async (req, reply) => {
+      const user = req.user as { id?: string; sub?: string; userId?: string } | undefined;
+      const actorId = user?.id || user?.sub || user?.userId;
+      const { id } = req.params as { id: string };
+      const expense = await CashOutService.approve(id, app.prisma, actorId);
+      return reply.send({ success: true, data: expense });
+    }
+  );
+
+  // PATCH /api/finance/cash-outs/:id/reject (ADMIN)
+  app.patch(
+    '/cash-outs/:id/reject',
+    { preHandler: [app.authenticate, requireAdmin] },
+    async (req, reply) => {
+      const user = req.user as { id?: string; sub?: string; userId?: string } | undefined;
+      const actorId = user?.id || user?.sub || user?.userId;
+      const { id } = req.params as { id: string };
+      const body = req.body as { reason: string };
+
+      const expense = await CashOutService.reject(
+        id,
+        body.reason,
+        app.prisma,
+        actorId
+      );
+
+      return reply.send({ success: true, data: expense });
+    }
+  );
+
+  // ============================================
+  // EXPENSE REVERSAL
+  // ============================================
+
+  app.post(
+    '/expenses/:id/reverse',
+    { preHandler: [app.authenticate, requireAdmin] },
+    async (req, reply) => {
+      const user = req.user as { id?: string; sub?: string; userId?: string } | undefined;
+      const actorId = user?.id || user?.sub || user?.userId;
+      const { id } = req.params as { id: string };
+      const body = req.body as { reason: string };
+
+      const result = await CashOutService.reverse(
+        id,
+        body.reason,
+        app.prisma,
+        actorId
+      );
+
+      return reply.send({ success: true, data: result });
+    }
+  );
+
+  // ============================================
+  // MY SHIFT (STAFF)
+  // ============================================
+
+  app.get(
+    '/my-shift',
+    { preHandler: [app.authenticate, requireStaff] },
+    async (req, reply) => {
+      const user = req.user as { id?: string; sub?: string; userId?: string } | undefined;
+      const actorId = user?.id || user?.sub || user?.userId;
+      if (!actorId) {
+        return reply.code(401).send({ success: false, error: 'Unauthorized' });
+      }
+      const data = await CashOutService.myShift(actorId, app.prisma);
+      return reply.send({ success: true, data });
+    }
+  );
+
+  // ============================================
+  // ACCOUNTS (ADMIN)
+  // ============================================
+
+  app.get(
+    '/accounts',
+    { preHandler: [app.authenticate, requireAdmin] },
+    async (_req, reply) => {
+      const data = await CashOutService.accounts(app.prisma);
+      return reply.send({ success: true, data });
     }
   );
 }

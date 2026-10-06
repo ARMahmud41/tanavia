@@ -745,22 +745,7 @@ enum ExpenseCategory {
   PACKAGING
   MARKETING
   TRANSPORT
-  SHOP_SUPPLIES
   OTHER
-}
-
-enum ExpenseStatus {
-  PENDING
-  POSTED
-  REJECTED
-  REVERSED
-}
-
-enum PaidFrom {
-  CASH
-  BKASH
-  NAGAD
-  BANK
 }
 
 model Expense {
@@ -774,27 +759,8 @@ model Expense {
   createdAt   DateTime        @default(now())
   updatedAt   DateTime        @updatedAt
 
-  // NEW: Status + account fields
-  status      ExpenseStatus   @default(POSTED)
-  paidFrom    PaidFrom        @default(CASH)
-  reason      String?         @db.Text
-
-  // NEW: Approval workflow
-  approvedBy  String?
-  approvedAt  DateTime?
-  rejectedBy  String?
-  rejectedAt  DateTime?
-
-  // NEW: Reversal (self-relation)
-  reversesId  String?         @unique
-  reverses    Expense?        @relation("ExpenseReversal", fields: [reversesId], references: [id])
-  reversedBy  Expense?        @relation("ExpenseReversal")
-
   @@index([category, spentAt])
   @@index([spentAt])
-  @@index([status])
-  @@index([paidFrom])
-  @@index([status, spentAt])
 }
 
 // ============================================

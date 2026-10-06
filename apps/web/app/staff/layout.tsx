@@ -140,18 +140,8 @@ const MENU_GROUPS: MenuGroup[] = [
     label: 'Finance',
     items: [
       {
-        href: '/staff/payments',
-        label: 'Payments',
-        roles: ['ADMIN', 'STAFF'],
-      },
-      {
-        href: '/staff/expenses',
-        label: 'Expenses',
-        roles: ['ADMIN', 'STAFF'],
-      },
-      {
-        href: '/staff/reports',
-        label: 'Reports',
+        href: '/staff/finance',
+        label: 'My Shift',
         roles: ['ADMIN', 'STAFF'],
       },
     ],
@@ -314,22 +304,11 @@ function Icon({ name }: { name: string }) {
         <path d="M12 3l3 6 6 .9-4.5 4.4 1 6.2L12 17.5 6.5 20.5l1-6.2L3 9.9 9 9z" />
       </svg>
     ),
-    payments: (
-      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-        <rect x="3" y="6" width="18" height="12" rx="2" />
-        <path d="M3 10h18" />
-      </svg>
-    ),
-    expenses: (
-      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-        <path d="M4 4h16v16H4z" />
-        <path d="M8 8h8M8 12h8M8 16h5" />
-      </svg>
-    ),
-    reports: (
-      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-        <path d="M4 4v16h16" />
-        <path d="M7 15l4-4 3 3 5-6" />
+    finance: (
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <rect x="2" y="6" width="20" height="14" rx="2"/>
+        <path d="M2 10h20"/>
+        <circle cx="12" cy="15" r="2"/>
       </svg>
     ),
     staff: (
@@ -392,9 +371,7 @@ function getIconKey(href: string): string {
   if (href.includes('coupons')) return 'coupons';
   if (href.includes('banners')) return 'banners';
   if (href.includes('reviews')) return 'reviews';
-  if (href.includes('payments')) return 'payments';
-  if (href.includes('expenses')) return 'expenses';
-  if (href.includes('reports')) return 'reports';
+  if (href.includes('/finance')) return 'finance';
   if (href.includes('staff')) return 'staff';
   if (href.includes('shifts')) return 'shifts';
   if (href.includes('audit')) return 'audit';
