@@ -452,10 +452,23 @@ model Order {
   cancelReason  String?      @db.Text
   adminNote     String?      @db.Text
 
+  // Legacy fields (kept for compatibility)
   courier       String?
   consignmentId String?
   courierStatus String?
   trackingUrl   String?
+
+  // New courier relation
+  courierId            String?
+  courierRef           Courier?  @relation("OrderCourier", fields: [courierId], references: [id])
+  courierStatusDetail  String?
+  courierBookedAt      DateTime?
+  courierDeliveredAt   DateTime?
+  courierAttempts      Int       @default(0)
+  codAmount            Decimal?  @db.Decimal(10, 2)
+  settlementId         String?
+  settlement           CourierSettlement? @relation("SettlementOrders", fields: [settlementId], references: [id])
+  returnRecord         CourierReturn?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -475,6 +488,9 @@ model Order {
   @@index([userId])
   @@index([customerId])
   @@index([shiftId])
+  @@index([courierId])
+  @@index([courierStatus])
+  @@index([consignmentId])
 }
 
 model OrderItem {
@@ -1041,4 +1057,161 @@ model Setting {
   key       String   @id
   value     Json
   updatedAt DateTime @updatedAt
+}
+
+// ============================================
+// COURIER (Pathao, RedX, Steadfast, etc.)
+// ============================================
+
+model Courier {
+  id          String   @id @default(cuid())
+  name        String
+  slug        String   @unique
+  logo        String?
+  phone       String?
+  email       String?
+  website     String?
+
+  // API credentials (encrypted at rest)
+  apiBaseUrl  String?
+  apiKey      String?
+  apiSecret   String?
+  apiToken    String?  @db.Text
+  apiTokenExpiresAt DateTime?
+
+  // Settings
+  active      Boolean  @default(true)
+  isDefault   Boolean  @default(false)
+  codEnabled  Boolean  @default(true)
+  codFeePercent Decimal @default(1) @db.Decimal(5, 2)
+  codFeeFixed Decimal  @default(0) @db.Decimal(10, 2)
+
+  // Business
+  contactPerson String?
+  paymentCycle  String?
+  notes       String?  @db.Text
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  orders      Order[]             @relation("OrderCourier")
+  rates       CourierRate[]
+  settlements CourierSettlement[]
+  returns     CourierReturn[]
+
+  @@index([slug])
+  @@index([active])
+  @@index([isDefault])
+}
+
+// ============================================
+// COURIER RATE (per district + weight)
+// ============================================
+
+model CourierRate {
+  id           String   @id @default(cuid())
+  courierId    String
+  district     String
+  weightUpTo   Decimal  @default(0.5) @db.Decimal(5, 2)
+
+  deliveryFee  Decimal  @db.Decimal(10, 2)
+  extraPerKg   Decimal  @default(0) @db.Decimal(10, 2)
+  codFee       Decimal  @default(0) @db.Decimal(10, 2)
+  returnFee    Decimal  @db.Decimal(10, 2)
+
+  active       Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  courier      Courier  @relation(fields: [courierId], references: [id], onDelete: Cascade)
+
+  @@unique([courierId, district, weightUpTo])
+  @@index([courierId])
+  @@index([district])
+}
+
+// ============================================
+// COURIER SETTLEMENT (COD reconciliation)
+// ============================================
+
+enum SettlementStatus {
+  PENDING
+  PARTIAL
+  COMPLETED
+  DISPUTED
+}
+
+model CourierSettlement {
+  id            String            @id @default(cuid())
+  settlementNo  String            @unique
+  courierId     String
+
+  periodFrom    DateTime
+  periodTo      DateTime
+
+  grossCOD      Decimal           @db.Decimal(10, 2)
+  deliveryFees  Decimal           @db.Decimal(10, 2)
+  codFees       Decimal           @db.Decimal(10, 2)
+  returnFees    Decimal           @db.Decimal(10, 2)
+  otherDeductions Decimal         @default(0) @db.Decimal(10, 2)
+  netPayout     Decimal           @db.Decimal(10, 2)
+
+  status        SettlementStatus  @default(PENDING)
+  paidAt        DateTime?
+  paidBy        String?
+  reference     String?
+  notes         String?           @db.Text
+
+  createdAt     DateTime          @default(now())
+  updatedAt     DateTime          @updatedAt
+
+  courier       Courier           @relation(fields: [courierId], references: [id])
+  orders        Order[]           @relation("SettlementOrders")
+
+  @@index([courierId, status])
+  @@index([periodFrom, periodTo])
+  @@index([settlementNo])
+}
+
+// ============================================
+// COURIER RETURN
+// ============================================
+
+enum CourierReturnReason {
+  CUSTOMER_REFUSED
+  NOT_REACHABLE
+  WRONG_ADDRESS
+  CUSTOMER_CANCELLED
+  DAMAGED_IN_TRANSIT
+  LOST
+  OTHER
+}
+
+model CourierReturn {
+  id              String              @id @default(cuid())
+  orderId         String              @unique
+  courierId       String
+  consignmentId   String?
+
+  reason          CourierReturnReason
+  reasonNote      String?             @db.Text
+
+  outboundFee     Decimal             @default(0) @db.Decimal(10, 2)
+  returnFee       Decimal             @default(0) @db.Decimal(10, 2)
+  totalLoss       Decimal             @default(0) @db.Decimal(10, 2)
+
+  receivedAt      DateTime?
+  receivedBy      String?
+  inspectionNote  String?             @db.Text
+  itemsRestocked  Boolean             @default(false)
+
+  createdAt       DateTime            @default(now())
+  updatedAt       DateTime            @updatedAt
+
+  order           Order               @relation(fields: [orderId], references: [id])
+  courier         Courier             @relation(fields: [courierId], references: [id])
+
+  @@index([courierId])
+  @@index([reason])
+  @@index([receivedAt])
 }

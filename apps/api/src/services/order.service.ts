@@ -98,8 +98,20 @@ const ORDER_SELECT = {
   paymentStatus: true,
   paymentTxId: true,
   courier: true,
+  courierId: true,
+  courierRef: {
+    select: { id: true, name: true, slug: true, logo: true },
+  },
   consignmentId: true,
   courierStatus: true,
+  courierStatusDetail: true,
+  courierBookedAt: true,
+  courierDeliveredAt: true,
+  courierAttempts: true,
+  codAmount: true,
+  codSettledAt: true,
+  settlementId: true,
+  trackingUrl: true,
   createdAt: true,
   updatedAt: true,
   items: { select: ORDER_ITEM_SELECT },
@@ -330,10 +342,6 @@ export class OrderService {
         const paymentStatus =
           input.paymentMethod === 'COD' ? 'WAITING' : 'REVIEW';
 
-        // ============================================
-        // NOTE: ONLINE orders use `userId` scalar only — no shiftId, no
-        // nested `user: {connect}`. This avoids the Prisma 5.22.0 XOR bug.
-        // ============================================
         const orderId = randomUUID();
 
         await tx.$executeRaw`
@@ -503,10 +511,6 @@ export class OrderService {
 
   /**
    * Place an OFFLINE order (POS / physical shop).
-   *
-   * Uses $executeRaw to bypass the Prisma 5.22.0 XOR bug with
-   * checked/unchecked create inputs when both scalar FK (shiftId, userId)
-   * and nested relations (items, events) are present.
    */
   static async placeOfflineOrder(
     input: PlaceOfflineOrderInput,
@@ -594,9 +598,6 @@ export class OrderService {
         const total = subtotal - discount;
         const orderNumber = await this.generateOrderNumber(tx);
 
-        // ============================================
-        // RAW INSERT — bypass Prisma checked/unchecked XOR bug
-        // ============================================
         const orderId = randomUUID();
 
         await tx.$executeRaw`
@@ -663,7 +664,6 @@ export class OrderService {
           throw new Error('Order created but could not be fetched');
         }
 
-        // Permanently deduct qty (POS sale)
         for (const li of lineItems) {
           const variant = await tx.variant.findUnique({
             where: { id: li.variantId },

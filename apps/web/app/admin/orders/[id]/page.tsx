@@ -7,6 +7,7 @@ import { api, ApiError } from '@/lib/api';
 import { getToken } from '@/lib/auth';
 import { tk, formatDateTime } from '@/lib/format';
 import { ShippingLabel } from '@/components/ShippingLabel';
+import { CourierBookingCard } from '@/components/CourierBookingCard';
 
 interface OrderItem {
   id: string;
@@ -52,6 +53,20 @@ interface Order {
   paymentStatus: string;
   paymentTxId?: string | null;
   courier?: string | null;
+  courierId?: string | null;
+  courierRef?: {
+    id: string;
+    name: string;
+    slug: string;
+    logo?: string | null;
+  } | null;
+  courierStatusDetail?: string | null;
+  courierBookedAt?: string | null;
+  courierDeliveredAt?: string | null;
+  courierAttempts?: number;
+  codAmount?: string | number | null;
+  codSettledAt?: string | null;
+  settlementId?: string | null;
   consignmentId?: string | null;
   courierStatus?: string | null;
   createdAt: string;
@@ -502,42 +517,11 @@ export default function AdminOrderDetailPage() {
           </section>
 
           {/* Courier */}
-          <section className="bg-white rounded-lg shadow-[0_2px_10px_rgba(15,42,92,0.06)] p-5">
-            <h2 className="font-serif text-lg font-semibold text-[#0F2A5C] mb-4">
-              Courier
-            </h2>
-            {order.courier ? (
-              <div className="space-y-3 text-sm">
-                <div className="flex justify-between">
-                  <span className="text-[#8A8F98]">Provider</span>
-                  <span className="font-medium capitalize">
-                    {order.courier}
-                  </span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-[#8A8F98]">Consignment ID</span>
-                  <span className="font-mono text-xs">
-                    {order.consignmentId}
-                  </span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-[#8A8F98]">Status</span>
-                  <span className="font-medium">
-                    {order.courierStatus || 'BOOKED'}
-                  </span>
-                </div>
-              </div>
-            ) : (
-              <div>
-                <p className="text-sm text-[#8A8F98] mb-3">
-                  Not booked with courier yet.
-                </p>
-                <p className="text-xs text-[#8A8F98]">
-                  Courier booking coming soon.
-                </p>
-              </div>
-            )}
-          </section>
+          <CourierBookingCard
+            order={order}
+            onRefresh={load}
+            onPrintLabel={() => setShowShippingLabel(true)}
+          />
         </div>
       </div>
 

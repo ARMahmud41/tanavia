@@ -13,8 +13,12 @@ import { stockRoutes } from './stock.js';
 import { staffRoutes } from './staff.js';
 import { financeRoutes } from './finance.js';
 import { courierRoutes } from './courier.js';
+import { courierBookingRoutes } from './courier-booking.js';
+import { settlementRoutes } from './settlements.js';
+import { courierReturnRoutes } from './courier-returns.js';
 import { paymentRoutes } from './payments.js';
 import { uploadRoutes } from './upload.js';
+import { courierWebhookRoutes } from './webhooks/courier.js';
 import { webhookRoutes } from './webhooks/index.js';
 
 export async function registerRoutes(app: FastifyInstance) {
@@ -39,7 +43,11 @@ export async function registerRoutes(app: FastifyInstance) {
   await app.register(staffRoutes, { prefix: '/api/staff' });
   await app.register(financeRoutes, { prefix: '/api/finance' });
   await app.register(courierRoutes, { prefix: '/api/courier' });
+  await app.register(courierBookingRoutes, { prefix: '/api/courier-booking' });
+  await app.register(settlementRoutes, { prefix: '/api/settlements' });
+  await app.register(courierReturnRoutes, { prefix: '/api/courier-returns' });
   await app.register(paymentRoutes, { prefix: '/api/payments' });
   await app.register(uploadRoutes, { prefix: '/api/upload' });
+  await app.register(courierWebhookRoutes, { prefix: '/api/webhooks/courier' });
   await app.register(webhookRoutes, { prefix: '/api/webhooks' });
 }
