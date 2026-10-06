@@ -22,6 +22,9 @@ const NAV_ITEMS = [
   { href: '/admin/courier', label: 'Couriers', icon: '🚚' },
   { href: '/admin/courier/settlements', label: 'COD Settlements', icon: '💰' },
   { href: '/admin/courier/returns', label: 'Courier Returns', icon: '↩️' },
+  { href: '/admin/coupons', label: 'Coupons', icon: '🎟️' },
+  { href: '/admin/banners', label: 'Banners', icon: '🖼️' },
+  { href: '/admin/reviews', label: 'Reviews', icon: '⭐' },
   { href: '/admin/payments', label: 'Payments', icon: '💳' },
   { href: '/admin/drops', label: 'Drops', icon: '✨' },
 ];

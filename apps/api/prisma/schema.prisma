@@ -895,6 +895,43 @@ model PurchaseOrderItem {
 }
 
 // ============================================
+// BANNER (Homepage / category / popup)
+// ============================================
+
+enum BannerPosition {
+  HOME_HERO
+  HOME_STRIP
+  CATEGORY_TOP
+  PRODUCT_SIDEBAR
+  POPUP
+  CHECKOUT
+}
+
+model Banner {
+  id          String         @id @default(cuid())
+  title       String
+  subtitle    String?
+  image       String
+  mobileImage String?
+  link        String?
+  ctaText     String?
+  position    BannerPosition @default(HOME_HERO)
+  sortOrder   Int            @default(0)
+  active      Boolean        @default(true)
+  startsAt    DateTime?
+  endsAt      DateTime?
+  impressions Int            @default(0)
+  clicks      Int            @default(0)
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
+  createdBy   String?
+
+  @@index([position, active])
+  @@index([startsAt, endsAt])
+  @@index([sortOrder])
+}
+
+// ============================================
 // REVIEW
 // ============================================
 
