@@ -3,20 +3,20 @@ import { SettlementService } from '../services/settlement.service.js';
 import { requireAdmin, requireStaff } from '../middleware/require-role.js';
 
 export async function settlementRoutes(app: FastifyInstance) {
-  // GET /api/settlements/stats
+  // GET /api/settlements/stats (STAFF + ADMIN)
   app.get(
     '/stats',
-    { preHandler: [app.authenticate, requireAdmin] },
+    { preHandler: [app.authenticate, requireStaff] },
     async (_req, reply) => {
       const stats = await SettlementService.stats(app.prisma);
       return reply.send({ success: true, data: stats });
     }
   );
 
-  // GET /api/settlements
+  // GET /api/settlements (STAFF + ADMIN)
   app.get(
     '/',
-    { preHandler: [app.authenticate, requireAdmin] },
+    { preHandler: [app.authenticate, requireStaff] },
     async (req, reply) => {
       const q = req.query as { courierId?: string; status?: string };
       const list = await SettlementService.list(
@@ -27,7 +27,7 @@ export async function settlementRoutes(app: FastifyInstance) {
     }
   );
 
-  // POST /api/settlements/generate
+  // POST /api/settlements/generate (ADMIN only)
   app.post(
     '/generate',
     { preHandler: [app.authenticate, requireAdmin] },
@@ -47,10 +47,10 @@ export async function settlementRoutes(app: FastifyInstance) {
     }
   );
 
-  // GET /api/settlements/:id
+  // GET /api/settlements/:id (STAFF + ADMIN)
   app.get(
     '/:id',
-    { preHandler: [app.authenticate, requireAdmin] },
+    { preHandler: [app.authenticate, requireStaff] },
     async (req, reply) => {
       const { id } = req.params as { id: string };
       const s = await SettlementService.getById(id, app.prisma);
@@ -58,7 +58,7 @@ export async function settlementRoutes(app: FastifyInstance) {
     }
   );
 
-  // POST /api/settlements/:id/paid
+  // POST /api/settlements/:id/paid (ADMIN only)
   app.post(
     '/:id/paid',
     { preHandler: [app.authenticate, requireAdmin] },
