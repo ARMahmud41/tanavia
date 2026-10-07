@@ -161,7 +161,7 @@ const MENU_GROUPS: MenuGroup[] = [
         roles: ['ADMIN'],
       },
       {
-        href: '/staff/shifts',
+        href: '/staff/shift',
         label: 'Shifts',
         roles: ['ADMIN', 'STAFF'],
       },
@@ -384,8 +384,8 @@ function getIconKey(href: string): string {
   if (href.includes('reviews')) return 'reviews';
   if (href.includes('/finance')) return 'finance';
   if (href.includes('payments')) return 'payments';
+  if (href.includes('shift')) return 'shifts';
   if (href.includes('staff')) return 'staff';
-  if (href.includes('shifts')) return 'shifts';
   if (href.includes('audit')) return 'audit';
   if (href.includes('settings')) return 'settings';
   if (href.includes('notifications')) return 'notifications';
