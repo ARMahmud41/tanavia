@@ -31,7 +31,7 @@ interface PaymentOption {
 }
 
 const PAYMENT_METHODS: PaymentOption[] = [
-  { value: 'COD', label: 'COD', logo: '/logos/cod.png' },
+  { value: 'COD', label: 'Cash On Delivery', logo: '/logos/cod.png' },
   { value: 'BKASH', label: 'bKash', logo: '/logos/bkash.png' },
   { value: 'NAGAD', label: 'Nagad', logo: '/logos/nagad.png' },
   { value: 'ROCKET', label: 'Rocket', logo: '/logos/rocket.png' },

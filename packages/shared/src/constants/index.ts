@@ -28,10 +28,13 @@ export const PAYMENT_METHODS = [
 export const COURIERS = ['steadfast', 'pathao'] as const;
 export const ROLES = ['CUSTOMER', 'STAFF', 'MANAGER', 'ADMIN'] as const;
 
+// Suggested shapes (frontend uses for autocomplete dropdown)
+// Admin can enter any custom shape via free-text input
 export const PRODUCT_SHAPES = [
   'tee', 'shirt', 'jacket', 'hoodie', 'pant', 'dress',
-  'kurti', 'shoe', 'bag', 'tote', 'backpack', 'glasses',
-  'wallet', 'kidset', 'watch',
+  'kurti', 'saree', 'panjabi', 'shoe', 'bag', 'tote',
+  'backpack', 'wallet', 'watch', 'glasses', 'kidset',
+  'other',
 ] as const;
 
 export const BD_DISTRICTS = [

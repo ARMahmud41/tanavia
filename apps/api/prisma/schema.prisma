@@ -254,6 +254,7 @@ model Product {
   active        Boolean       @default(true)
   featured      Boolean       @default(false)
   tryable       Boolean       @default(true)
+  freeDelivery  Boolean       @default(false)
   shape         String        @default("tee")
   images        String[]
   tags          String[]
@@ -289,7 +290,7 @@ model Product {
 }
 
 // ============================================
-// PRODUCT IMAGE (ordered, with alt + primary)
+// PRODUCT IMAGE (ordered, with alt + primary + per-color)
 // ============================================
 
 model ProductImage {
@@ -297,6 +298,7 @@ model ProductImage {
   productId String
   url       String
   alt       String?
+  color     String?  // null = applies to all colors (fallback)
   position  Int      @default(0)
   isPrimary Boolean  @default(false)
   createdAt DateTime @default(now())
@@ -304,6 +306,7 @@ model ProductImage {
   product   Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
 
   @@index([productId])
+  @@index([productId, color])
   @@index([productId, isPrimary])
   @@index([productId, position])
 }

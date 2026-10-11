@@ -19,9 +19,23 @@ export async function productRoutes(app: FastifyInstance) {
       preHandler: [validate(ProductFiltersSchema, 'query')],
     },
     async (req, reply) => {
-      const filters = req.query as ProductFiltersInput;
+      const q = req.query as ProductFiltersInput;
 
-      const result = await ProductService.list(filters, app.prisma, 'PUBLIC');
+      const result = await ProductService.list(
+        {
+          category: q.category,
+          search: q.search,
+          offer: q.offer, // ← special offer filter (matches product tags)
+          minPrice: q.minPrice,
+          maxPrice: q.maxPrice,
+          featured: q.featured,
+          sort: q.sort,
+          page: q.page,
+          limit: q.limit,
+        },
+        app.prisma,
+        'PUBLIC'
+      );
 
       return reply.send({
         success: true,
@@ -59,11 +73,22 @@ export async function productRoutes(app: FastifyInstance) {
       ],
     },
     async (req, reply) => {
-      const filters = req.query as ProductFiltersInput;
+      const q = req.query as ProductFiltersInput;
       const user = req.user as any;
 
       const result = await ProductService.list(
-        filters,
+        {
+          category: q.category,
+          search: q.search,
+          offer: q.offer,
+          minPrice: q.minPrice,
+          maxPrice: q.maxPrice,
+          featured: q.featured,
+          active: q.active,
+          sort: q.sort,
+          page: q.page,
+          limit: q.limit,
+        },
         app.prisma,
         user.role === 'ADMIN' ? 'ADMIN' : 'STAFF'
       );
@@ -89,9 +114,24 @@ export async function productRoutes(app: FastifyInstance) {
       ],
     },
     async (req, reply) => {
-      const filters = req.query as ProductFiltersInput;
+      const q = req.query as ProductFiltersInput;
 
-      const result = await ProductService.list(filters, app.prisma, 'ADMIN');
+      const result = await ProductService.list(
+        {
+          category: q.category,
+          search: q.search,
+          offer: q.offer,
+          minPrice: q.minPrice,
+          maxPrice: q.maxPrice,
+          featured: q.featured,
+          active: q.active,
+          sort: q.sort,
+          page: q.page,
+          limit: q.limit,
+        },
+        app.prisma,
+        'ADMIN'
+      );
 
       return reply.send({
         success: true,

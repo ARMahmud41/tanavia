@@ -6,6 +6,17 @@ import { useEffect, useMemo, useState } from 'react';
 import { api, ApiError } from '@/lib/api';
 import { getToken } from '@/lib/auth';
 import { uploadImages } from '@/lib/upload';
+import { SpecialOfferPicker } from '@/components/SpecialOfferPicker';
+
+// ============================================
+// Types
+// ============================================
+interface Category {
+  id: string;
+  name: string;
+  nameBn?: string | null;
+  slug: string;
+}
 
 interface Variant {
   size: string;
@@ -13,7 +24,15 @@ interface Variant {
   qty: number | '';
 }
 
-const CATEGORIES = ['Men', 'Women', 'Kids', 'Accessories'];
+const OFFER_SLUGS = new Set([
+  'mega-deal',
+  'new-arrival',
+  'top-selling',
+  'free-delivery',
+  'merchandise',
+  'puja-sale',
+]);
+
 const SHAPES = ['shirt', 'pant', 'panjabi', 'saree', 'kurti', 'dress', 'shoe', 'bag', 'other'];
 
 // ============================================
@@ -67,10 +86,14 @@ export default function AddProductPage() {
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
 
+  // Categories from API
+  const [categories, setCategories] = useState<Category[]>([]);
+  const [loadingCats, setLoadingCats] = useState(true);
+  const [categoryId, setCategoryId] = useState('');
+
   // Basic info
   const [name, setName] = useState('');
   const [nameBn, setNameBn] = useState('');
-  const [category, setCategory] = useState('Men');
   const [brand, setBrand] = useState('TANAVIA');
   const [shape, setShape] = useState('shirt');
   const [description, setDescription] = useState('');
@@ -87,6 +110,7 @@ export default function AddProductPage() {
   const [active, setActive] = useState(true);
   const [featured, setFeatured] = useState(false);
   const [tryable, setTryable] = useState(false);
+  const [freeDelivery, setFreeDelivery] = useState(false);
 
   // Variant selection
   const [selectedSizes, setSelectedSizes] = useState<string[]>([]);
@@ -109,6 +133,30 @@ export default function AddProductPage() {
   const customerPays = Math.round(priceNum * (1 - discountNum / 100));
   const profitPerUnit = customerPays - buyingNum;
   const marginPct = customerPays > 0 ? Math.round((profitPerUnit / customerPays) * 100) : 0;
+
+  // ============================================
+  // Load categories from API
+  // ============================================
+  useEffect(() => {
+    async function load() {
+      setLoadingCats(true);
+      try {
+        const token = getToken() || undefined;
+        const res = await api.get<Category[]>('/api/categories', { token });
+        const list = res.data || [];
+        setCategories(list);
+        // Default to first category
+        if (list.length > 0) {
+          setCategoryId(list[0].id);
+        }
+      } catch {
+        setCategories([]);
+      } finally {
+        setLoadingCats(false);
+      }
+    }
+    load();
+  }, []);
 
   // Auto-reset sizes when shape changes
   useEffect(() => {
@@ -158,7 +206,6 @@ export default function AddProductPage() {
     const colorName = customColorInput.trim();
     if (!colorName) return;
 
-    // Persist color in local COLOR_MAP
     COLOR_MAP[colorName] = customColorHex;
 
     if (!selectedColors.includes(colorName)) {
@@ -239,6 +286,10 @@ export default function AddProductPage() {
       setError('Product name must be at least 3 characters');
       return;
     }
+    if (!categoryId) {
+      setError('Please select a category');
+      return;
+    }
     if (!price || Number(price) <= 0) {
       setError('Selling price must be greater than 0');
       return;
@@ -268,7 +319,10 @@ export default function AddProductPage() {
       const payload = {
         name: name.trim(),
         nameBn: nameBn.trim() || undefined,
-        category,
+        // Legacy category name (for backward compatibility with older filtering logic)
+        category:
+          categories.find((c) => c.id === categoryId)?.name || 'General',
+        categoryId,
         brand: brand.trim() || undefined,
         shape,
         description: description.trim() || undefined,
@@ -276,11 +330,11 @@ export default function AddProductPage() {
         images,
         price: Number(price),
         cost: Number(buyingPrice),
-        buyingPrice: Number(buyingPrice),
         discount: Number(discount) || 0,
         active,
         featured,
         tryable,
+        freeDelivery,
         variants: finalVariants,
       };
 
@@ -382,15 +436,34 @@ export default function AddProductPage() {
                     <label className="block text-sm font-medium text-[#0F2A5C] mb-1.5">
                       Category <span className="text-red-500">*</span>
                     </label>
-                    <select
-                      value={category}
-                      onChange={(e) => setCategory(e.target.value)}
-                      className="w-full bg-[#F1F3F6] border border-transparent rounded-lg px-3.5 py-2.5 text-sm focus:outline-none focus:bg-white focus:border-[#0F2A5C] transition cursor-pointer"
-                    >
-                      {CATEGORIES.map((c) => (
-                        <option key={c} value={c}>{c}</option>
-                      ))}
-                    </select>
+                    {loadingCats ? (
+                      <div className="w-full bg-[#F1F3F6] rounded-lg px-3.5 py-2.5 text-sm text-[#8A8F98]">
+                        Loading categories...
+                      </div>
+                    ) : categories.length === 0 ? (
+                      <div className="w-full bg-amber-50 border border-amber-200 rounded-lg px-3.5 py-2.5 text-xs text-amber-800">
+                        No categories yet.{' '}
+                        <Link
+                          href="/admin/categories"
+                          className="underline font-semibold"
+                        >
+                          Add a category
+                        </Link>{' '}
+                        first.
+                      </div>
+                    ) : (
+                      <select
+                        value={categoryId}
+                        onChange={(e) => setCategoryId(e.target.value)}
+                        className="w-full bg-[#F1F3F6] border border-transparent rounded-lg px-3.5 py-2.5 text-sm focus:outline-none focus:bg-white focus:border-[#0F2A5C] transition cursor-pointer"
+                      >
+                        {categories.map((c) => (
+                          <option key={c.id} value={c.id}>
+                            {c.name}
+                          </option>
+                        ))}
+                      </select>
+                    )}
                   </div>
                   <div>
                     <label className="block text-sm font-medium text-[#0F2A5C] mb-1.5">Brand</label>
@@ -403,16 +476,25 @@ export default function AddProductPage() {
                     />
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-[#0F2A5C] mb-1.5">Shape / Type</label>
-                    <select
+                    <label className="block text-sm font-medium text-[#0F2A5C] mb-1.5">
+                      Shape / Type
+                      <span className="text-[#8A8F98] font-normal text-xs ml-1">
+                        (pick or type new)
+                      </span>
+                    </label>
+                    <input
+                      type="text"
+                      list="shape-options-new"
                       value={shape}
                       onChange={(e) => setShape(e.target.value)}
-                      className="w-full bg-[#F1F3F6] border border-transparent rounded-lg px-3.5 py-2.5 text-sm focus:outline-none focus:bg-white focus:border-[#0F2A5C] transition cursor-pointer"
-                    >
+                      placeholder="e.g. shirt, panjabi, hoodie"
+                      className="w-full bg-[#F1F3F6] border border-transparent rounded-lg px-3.5 py-2.5 text-sm focus:outline-none focus:bg-white focus:border-[#0F2A5C] transition"
+                    />
+                    <datalist id="shape-options-new">
                       {SHAPES.map((s) => (
-                        <option key={s} value={s}>{s}</option>
+                        <option key={s} value={s} />
                       ))}
-                    </select>
+                    </datalist>
                   </div>
                 </div>
 
@@ -424,6 +506,34 @@ export default function AddProductPage() {
                     onChange={(e) => setDescription(e.target.value)}
                     placeholder="Describe the product..."
                     className="w-full bg-[#F1F3F6] border border-transparent rounded-lg px-3.5 py-2.5 text-sm focus:outline-none focus:bg-white focus:border-[#0F2A5C] transition resize-none"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-[#0F2A5C] mb-1.5">
+                    Special Offers
+                    <span className="text-[#8A8F98] font-normal text-xs ml-2">
+                      (Optional — makes product appear in special offer pages)
+                    </span>
+                  </label>
+                  <SpecialOfferPicker
+                    value={
+                      tags
+                        .split(',')
+                        .map((t) => t.trim().toLowerCase())
+                        .filter(Boolean)
+                    }
+                    onChange={(newTags) => {
+                      // Merge with existing manual tags (non-offer)
+                      const currentTags = tags
+                        .split(',')
+                        .map((t) => t.trim().toLowerCase())
+                        .filter(Boolean);
+                      const otherTags = currentTags.filter(
+                        (t) => !OFFER_SLUGS.has(t)
+                      );
+                      setTags([...otherTags, ...newTags].join(', '));
+                    }}
                   />
                 </div>
 
@@ -872,6 +982,11 @@ export default function AddProductPage() {
                   label="Try Room available"
                   checked={tryable}
                   onChange={setTryable}
+                />
+                <Toggle
+                  label="🚚 Free Delivery"
+                  checked={freeDelivery}
+                  onChange={setFreeDelivery}
                 />
               </div>
             </section>

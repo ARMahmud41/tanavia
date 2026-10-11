@@ -17,7 +17,15 @@ interface Product {
   nameBn?: string | null;
   slug: string;
   description?: string | null;
-  category: string | null;
+  category:
+    | string
+    | {
+        id: string;
+        name: string;
+        nameBn?: string | null;
+        slug: string;
+      }
+    | null;
   brand?: string | null;
   sku: string;
   price: number | string;
@@ -66,10 +74,16 @@ export default async function ProductDetailPage({
           <>
             <span className="mx-2">/</span>
             <Link
-              href={`/products?category=${product.category.toLowerCase()}`}
+              href={`/products?category=${
+                typeof product.category === 'string'
+                  ? product.category.toLowerCase()
+                  : product.category?.slug || ''
+              }`}
               className="hover:text-wine"
             >
-              {product.category}
+              {typeof product.category === 'string'
+                ? product.category
+                : product.category?.nameBn || product.category?.name || ''}
             </Link>
           </>
         )}

@@ -44,3 +44,8 @@ temp/
 
 # Turbo cache
 .turbo/
+
+# Backup files (safety copies, never commit)
+*.backup
+*.bak
+*.orig

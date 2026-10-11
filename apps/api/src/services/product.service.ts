@@ -10,7 +10,8 @@ interface VariantInput {
 
 interface ProductImageInput {
   url: string;
-  alt?: string | null;
+  alt?: string;
+  color?: string | null;
   position?: number;
   isPrimary?: boolean;
 }
@@ -33,6 +34,7 @@ interface CreateProductInput {
   active?: boolean;
   featured?: boolean;
   tryable?: boolean;
+  freeDelivery?: boolean;
   barcode?: string;
   sku?: string;
   lowStockAt?: number;
@@ -47,6 +49,7 @@ interface UpdateProductInput extends Partial<CreateProductInput> {}
 interface ListFilters {
   category?: string;
   search?: string;
+  offer?: string;
   minPrice?: number;
   maxPrice?: number;
   featured?: boolean;
@@ -81,6 +84,7 @@ const PUBLIC_SELECT = {
   active: true,
   featured: true,
   tryable: true,
+  freeDelivery: true,
   shape: true,
   productImages: {
     orderBy: [{ isPrimary: 'desc' as const }, { position: 'asc' as const }],
@@ -88,6 +92,7 @@ const PUBLIC_SELECT = {
       id: true,
       url: true,
       alt: true,
+      color: true,
       position: true,
       isPrimary: true,
     },
@@ -190,6 +195,7 @@ export class ProductService {
         active: input.active ?? true,
         featured: input.featured ?? false,
         tryable: input.tryable ?? true,
+        freeDelivery: input.freeDelivery ?? false,
         lowStockAt: input.lowStockAt ?? 5,
         status: input.status || 'ACTIVE',
         metaTitle: input.metaTitle || null,
@@ -222,6 +228,7 @@ export class ProductService {
               create: input.productImages.map((img, i) => ({
                 url: img.url,
                 alt: img.alt ?? null,
+                color: img.color || null,
                 position: img.position ?? i,
                 isPrimary: img.isPrimary ?? i === 0,
               })),
@@ -302,6 +309,7 @@ export class ProductService {
     if (input.active !== undefined) data.active = input.active;
     if (input.featured !== undefined) data.featured = input.featured;
     if (input.tryable !== undefined) data.tryable = input.tryable;
+    if (input.freeDelivery !== undefined) data.freeDelivery = input.freeDelivery;
     if (input.barcode !== undefined) data.barcode = input.barcode;
     if (input.sku !== undefined) data.sku = input.sku;
 
@@ -333,6 +341,7 @@ export class ProductService {
               productId: id,
               url: img.url,
               alt: img.alt || null,
+              color: img.color || null,
               position: img.position ?? i,
               isPrimary: img.isPrimary ?? i === 0,
             })),
@@ -463,15 +472,6 @@ export class ProductService {
       where.active = filters.active;
     }
 
-    if (filters.category) {
-      // Support both categoryId and legacy category name/slug
-      where.OR = [
-        { categoryId: filters.category },
-        { category: { slug: filters.category } },
-        { category: { name: filters.category } },
-      ];
-    }
-
     // Hide soft-deleted products except for admin
     if (role !== 'ADMIN') {
       where.deletedAt = null;
@@ -479,23 +479,49 @@ export class ProductService {
 
     if (filters.featured !== undefined) where.featured = filters.featured;
 
-    if (filters.search) {
-      const q = filters.search.trim();
-      where.OR = [
-        { name: { contains: q, mode: 'insensitive' } },
-        { nameBn: { contains: q, mode: 'insensitive' } },
-        { description: { contains: q, mode: 'insensitive' } },
-        { sku: { contains: q, mode: 'insensitive' } },
-        { barcode: { contains: q, mode: 'insensitive' } },
-        { tags: { has: q } },
-      ];
-    }
-
     if (filters.minPrice !== undefined || filters.maxPrice !== undefined) {
       const priceFilter: Prisma.DecimalFilter = {};
       if (filters.minPrice !== undefined) priceFilter.gte = filters.minPrice;
       if (filters.maxPrice !== undefined) priceFilter.lte = filters.maxPrice;
       where.price = priceFilter;
+    }
+
+    // ============================================
+    // AND-based filters (category + search + offer)
+    // ============================================
+    const AND: Prisma.ProductWhereInput[] = [];
+
+    if (filters.category) {
+      AND.push({
+        OR: [
+          { categoryId: filters.category },
+          { category: { slug: filters.category } },
+          { category: { name: filters.category } },
+        ],
+      });
+    }
+
+    if (filters.search) {
+      const q = filters.search.trim();
+      AND.push({
+        OR: [
+          { name: { contains: q, mode: 'insensitive' } },
+          { nameBn: { contains: q, mode: 'insensitive' } },
+          { description: { contains: q, mode: 'insensitive' } },
+          { sku: { contains: q, mode: 'insensitive' } },
+          { barcode: { contains: q, mode: 'insensitive' } },
+          { tags: { has: q } },
+        ],
+      });
+    }
+
+    // Special Offer filter — matches against product tags
+    if (filters.offer) {
+      AND.push({ tags: { has: filters.offer } });
+    }
+
+    if (AND.length > 0) {
+      where.AND = AND;
     }
 
     let orderBy: Prisma.ProductOrderByWithRelationInput = { createdAt: 'desc' };
@@ -632,6 +658,7 @@ export class ProductService {
         active: false,
         featured: false,
         tryable: original.tryable,
+        freeDelivery: original.freeDelivery,
         shape: original.shape,
         tags: original.tags,
         lowStockAt: original.lowStockAt,
@@ -650,6 +677,7 @@ export class ProductService {
           create: original.productImages.map((img) => ({
             url: img.url,
             alt: img.alt,
+            color: img.color,
             position: img.position,
             isPrimary: img.isPrimary,
           })),

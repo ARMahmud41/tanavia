@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { addToCart, setBuyNow } from '@/lib/cart';
+import { WishlistButton } from './WishlistButton';
 
 interface Variant {
   id: string;
@@ -130,6 +131,11 @@ export function AddToCartButton({
     router.push('/checkout');
   }
 
+  const finalPrice =
+    product.discount > 0
+      ? Math.round(Number(product.price) * (1 - product.discount / 100))
+      : Number(product.price);
+
   return (
     <div>
       {/* Color picker */}
@@ -250,13 +256,14 @@ export function AddToCartButton({
           >
             {added ? '✓ Added to Cart!' : 'Add to Cart'}
           </button>
-          <button
-            type="button"
-            className="w-12 rounded-full border-2 border-line flex items-center justify-center text-lg hover:border-wine transition"
-            aria-label="Wishlist"
-          >
-            ♡
-          </button>
+          <WishlistButton
+            productId={product.id}
+            productSlug={product.slug}
+            productName={product.name}
+            productPrice={finalPrice}
+            productImage={product.images?.[0]}
+            variant="icon"
+          />
         </div>
 
         {/* Buy Now button */}

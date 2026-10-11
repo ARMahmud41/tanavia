@@ -20,6 +20,8 @@ import { courierBookingRoutes } from './courier-booking.js';
 import { settlementRoutes } from './settlements.js';
 import { courierReturnRoutes } from './courier-returns.js';
 import { paymentRoutes } from './payments.js';
+import { siteRoutes } from './site.js';
+import { dashboardRoutes } from './dashboard.js';
 import { uploadRoutes } from './upload.js';
 import { courierWebhookRoutes } from './webhooks/courier.js';
 import { webhookRoutes } from './webhooks/index.js';
@@ -53,6 +55,8 @@ export async function registerRoutes(app: FastifyInstance) {
   await app.register(reviewRoutes, { prefix: '/api/reviews' });
   await app.register(bannerRoutes, { prefix: '/api/banners' });
   await app.register(paymentRoutes, { prefix: '/api/payments' });
+  await app.register(siteRoutes, { prefix: '/api/site' });
+  await app.register(dashboardRoutes, { prefix: '/api/admin/dashboard' });
   await app.register(uploadRoutes, { prefix: '/api/upload' });
   await app.register(courierWebhookRoutes, { prefix: '/api/webhooks/courier' });
   await app.register(webhookRoutes, { prefix: '/api/webhooks' });

@@ -13,23 +13,37 @@ interface Variant {
   reserved: number;
 }
 
+interface ProductImage {
+  id: string;
+  url: string;
+  alt?: string | null;
+  color?: string | null;
+  position?: number;
+  isPrimary?: boolean;
+}
+
 interface Product {
   id: string;
   name: string;
   nameBn?: string | null;
   slug: string;
   description?: string | null;
-  category: string | null;
+  category:
+    | string
+    | { id: string; name: string; nameBn?: string | null; slug: string }
+    | null;
   brand?: string | null;
   sku: string;
   price: number | string;
   discount: number;
-  images: string[];
+  images?: string[];
+  productImages?: ProductImage[];
   tags: string[];
   rating: number;
   reviewCount: number;
   soldCount: number;
   tryable: boolean;
+  freeDelivery?: boolean;
   shape: string;
   variants: Variant[];
 }
@@ -40,24 +54,60 @@ interface Props {
 
 export function ProductView({ product }: Props) {
   const [selectedColor, setSelectedColor] = useState<string>(
-    product.variants[0]?.color || ''
+    product.variants?.[0]?.color || ''
   );
 
-  /**
-   * Filter images by selected color
-   * Pattern: filename contains color name (case-insensitive)
-   */
+  // Normalize images
+  const allImages = useMemo(() => {
+    if (product.productImages?.length) {
+      return product.productImages.map((img) => img.url);
+    }
+    return product.images || [];
+  }, [product.productImages, product.images]);
+
+  // Filter images by color
   const filteredImages = useMemo(() => {
-    if (!selectedColor) return product.images;
+    if (!selectedColor || allImages.length === 0) return allImages;
+
+    const imgs = product.productImages || [];
+
+    if (imgs.length > 0) {
+      const hasAnyColor = imgs.some(
+        (i) => i.color && i.color.trim() !== ''
+      );
+
+      if (hasAnyColor) {
+        const colorSpecific = imgs.filter(
+          (i) => i.color === selectedColor
+        );
+        const fallback = imgs.filter(
+          (i) => !i.color || i.color.trim() === ''
+        );
+
+        if (colorSpecific.length > 0) {
+          const combined = [...colorSpecific, ...fallback];
+          const seen = new Set<string>();
+          return combined
+            .filter((i) => {
+              if (seen.has(i.url)) return false;
+              seen.add(i.url);
+              return true;
+            })
+            .map((i) => i.url);
+        }
+
+        if (fallback.length > 0) {
+          return fallback.map((i) => i.url);
+        }
+      }
+    }
 
     const lower = selectedColor.toLowerCase();
-    const matches = product.images.filter((url) => {
-      const filename = url.toLowerCase();
-      return filename.includes(lower);
-    });
-
-    return matches.length > 0 ? matches : product.images;
-  }, [product.images, selectedColor]);
+    const matches = allImages.filter((u) =>
+      u.toLowerCase().includes(lower)
+    );
+    return matches.length > 0 ? matches : allImages;
+  }, [allImages, selectedColor, product.productImages]);
 
   const finalPrice =
     product.discount > 0
@@ -65,6 +115,22 @@ export function ProductView({ product }: Props) {
       : Number(product.price);
 
   const savings = Number(product.price) - finalPrice;
+
+  const categoryName =
+    typeof product.category === 'string'
+      ? product.category
+      : product.category?.nameBn || product.category?.name || '';
+
+  // AddToCartButton needs full product object
+  const cartProduct = {
+    id: product.id,
+    name: product.name,
+    slug: product.slug,
+    price: product.price,
+    discount: product.discount,
+    images: allImages,
+    variants: product.variants || [],
+  };
 
   return (
     <>
@@ -78,104 +144,109 @@ export function ProductView({ product }: Props) {
         {/* Brand + Category */}
         <div className="flex items-center gap-3 text-xs text-muted uppercase tracking-wider mb-2">
           {product.brand && <span>{product.brand}</span>}
-          {product.brand && product.category && <span>•</span>}
-          {product.category && <span>{product.category}</span>}
-        </div>
-
-        {/* Name */}
-        <h1 className="font-serif text-3xl md:text-4xl font-semibold text-ink mb-3">
-          {product.name}
-        </h1>
-        {product.nameBn && <p className="text-muted mb-3">{product.nameBn}</p>}
-
-        {/* Rating + sold */}
-        <div className="flex items-center gap-4 text-sm text-muted mb-5">
-          <span>
-            ⭐ {product.rating.toFixed(1)} ({product.reviewCount})
-          </span>
-          <span>•</span>
-          <span>{product.soldCount} sold</span>
-        </div>
-
-        {/* Price block */}
-        <div className="bg-sand/60 rounded-lg p-4 mb-6">
-          <div className="flex items-baseline gap-3 flex-wrap">
-            <span className="text-wine font-semibold text-3xl">
-              ৳{finalPrice.toLocaleString()}
-            </span>
-            {product.discount > 0 && (
-              <>
-                <span className="text-muted text-lg line-through">
-                  ৳{Number(product.price).toLocaleString()}
-                </span>
-                <span className="bg-wine text-white text-xs font-semibold px-2 py-1 rounded">
-                  -{product.discount}%
-                </span>
-              </>
-            )}
-          </div>
-          {product.discount > 0 && (
-            <p className="text-sm text-leaf mt-1">
-              You save ৳{savings.toLocaleString()}
-            </p>
+          {categoryName && (
+            <>
+              <span>/</span>
+              <span>{categoryName}</span>
+            </>
           )}
         </div>
 
-        {/* Description */}
-        {product.description && (
-          <p className="text-muted mb-6 leading-relaxed">
-            {product.description}
+        {/* Title */}
+        <h1 className="font-serif text-3xl sm:text-4xl font-semibold text-ink mb-3">
+          {product.name}
+        </h1>
+
+        {/* Pricing */}
+        <div className="flex items-baseline gap-3 mb-4">
+          <span className="text-2xl font-bold text-wine">
+            ৳{finalPrice.toLocaleString()}
+          </span>
+          {product.discount > 0 && (
+            <>
+              <span className="text-base text-muted line-through">
+                ৳{Number(product.price).toLocaleString()}
+              </span>
+              <span className="text-xs bg-wine/10 text-wine font-semibold px-2 py-1 rounded">
+                -{product.discount}%
+              </span>
+            </>
+          )}
+        </div>
+
+        {savings > 0 && (
+          <p className="text-xs text-emerald-700 mb-6">
+            Save ৳{savings.toLocaleString()}
           </p>
         )}
 
-        {/* Color + Size + Add to Cart + Buy Now */}
+        {product.freeDelivery && (
+          <div className="relative mb-5 overflow-hidden rounded-lg bg-emerald-600 shadow-[0_6px_20px_rgba(16,185,129,0.35)]">
+            {/* Animated shine */}
+            <div className="absolute inset-0 -translate-x-full animate-[shimmer_2.8s_infinite] bg-gradient-to-r from-transparent via-white/50 to-transparent" />
+            {/* Content */}
+            <div className="relative flex items-center gap-3 px-4 py-3.5 sm:px-5 sm:py-4">
+              {/* Lightning icon */}
+              <svg
+                width="26"
+                height="26"
+                viewBox="0 0 24 24"
+                fill="white"
+                className="flex-shrink-0 sm:w-7 sm:h-7"
+                style={{
+                  filter: 'drop-shadow(0 0 4px rgba(255,255,255,0.6))',
+                }}
+              >
+                <path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z" />
+              </svg>
+              <div className="flex-1">
+                <div className="font-bold text-white text-base sm:text-lg tracking-wide leading-tight">
+                  Free Delivery
+                </div>
+                <div className="text-[11px] sm:text-xs text-white/90 mt-0.5">
+                  No shipping charge on this item
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Add to cart — has its own color + size picker */}
         <AddToCartButton
-          product={product}
+          product={cartProduct}
           externalColor={selectedColor}
           onColorChange={setSelectedColor}
         />
 
-        {/* SKU */}
-        <div className="text-xs text-muted border-t border-line pt-4 mt-2">
-          SKU: {product.sku}
-        </div>
-
-        {/* WhatsApp Chat */}
-        <div className="mt-6 pt-6 border-t border-line">
+        {/* WhatsApp */}
+        <div className="mt-4">
           <WhatsAppChatButton
+            message={`Hi! I have a question about ${product.name}.`}
             variant="outline"
-            label="Ask about this product"
-            message={`Hi! I'm interested in "${product.name}" (SKU: ${product.sku}). Can you tell me more?`}
-            className="w-full"
+            label="Ask on WhatsApp"
           />
         </div>
 
-        {/* Trust badges */}
-        <div className="grid grid-cols-3 gap-3 mt-6 pt-6 border-t border-line">
-          <div className="text-center">
-            <div className="text-2xl mb-1">🚚</div>
-            <div className="text-xs text-muted leading-tight">
-              Fast delivery
-              <br />
-              all over BD
-            </div>
+        {/* Description */}
+        {product.description && (
+          <div className="mt-8 pt-6 border-t border-line">
+            <h2 className="font-serif text-lg font-semibold text-ink mb-2">
+              Description
+            </h2>
+            <p className="text-sm text-muted leading-relaxed whitespace-pre-wrap">
+              {product.description}
+            </p>
           </div>
-          <div className="text-center">
-            <div className="text-2xl mb-1">🔒</div>
-            <div className="text-xs text-muted leading-tight">
-              Secure
-              <br />
-              payment
+        )}
+
+        {/* Rating / Sold */}
+        <div className="mt-6 pt-6 border-t border-line flex items-center gap-6 text-xs text-muted">
+          {product.rating > 0 && (
+            <div>
+              ⭐ {product.rating.toFixed(1)} ({product.reviewCount} reviews)
             </div>
-          </div>
-          <div className="text-center">
-            <div className="text-2xl mb-1">↩️</div>
-            <div className="text-xs text-muted leading-tight">
-              7 day easy
-              <br />
-              return
-            </div>
-          </div>
+          )}
+          {product.soldCount > 0 && <div>📦 {product.soldCount} sold</div>}
         </div>
       </div>
     </>

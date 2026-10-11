@@ -1,4 +1,4 @@
-﻿'use client';
+'use client';
 
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
@@ -7,6 +7,7 @@ import { api, ApiError } from '@/lib/api';
 import { getToken } from '@/lib/auth';
 import { tk } from '@/lib/format';
 import { uploadImages } from '@/lib/upload';
+import { SpecialOfferPicker } from '@/components/SpecialOfferPicker';
 
 // ============================================
 // Types
@@ -15,6 +16,14 @@ interface Category {
   id: string;
   name: string;
   slug: string;
+}
+
+interface Variant {
+  id: string;
+  size: string;
+  color: string;
+  qty: number;
+  reserved: number;
 }
 
 interface Product {
@@ -36,18 +45,28 @@ interface Product {
   active: boolean;
   featured: boolean;
   tryable: boolean;
+  freeDelivery?: boolean;
   shape: string;
   tags: string[];
   lowStockAt: number;
   metaTitle?: string | null;
   metaDescription?: string | null;
+  variants?: Variant[];
   productImages?: Array<{
     id: string;
     url: string;
     alt?: string | null;
+    color?: string | null;
     position: number;
     isPrimary: boolean;
   }>;
+}
+
+interface ImageItem {
+  url: string;
+  alt: string;
+  color: string | null;
+  isPrimary: boolean;
 }
 
 // ============================================
@@ -71,6 +90,15 @@ const SHAPES = [
   'other',
 ];
 
+const OFFER_SLUGS = [
+  'mega-deal',
+  'new-arrival',
+  'top-selling',
+  'free-delivery',
+  'merchandise',
+  'puja-sale',
+];
+
 // ============================================
 // Page
 // ============================================
@@ -83,9 +111,11 @@ export default function EditProductPage() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const [categories, setCategories] = useState<Category[]>([]);
+  const [variantColors, setVariantColors] = useState<string[]>([]);
   const [tagInput, setTagInput] = useState('');
+  const [customColorInput, setCustomColorInput] = useState('');
+  const [showAddColor, setShowAddColor] = useState(false);
 
-  // Form state
   const [form, setForm] = useState({
     name: '',
     nameBn: '',
@@ -103,14 +133,14 @@ export default function EditProductPage() {
     active: true,
     featured: false,
     tryable: true,
+    freeDelivery: false,
     lowStockAt: 5,
     tags: [] as string[],
     metaTitle: '',
     metaDescription: '',
-    images: [] as Array<{ url: string; alt: string; isPrimary: boolean }>,
+    images: [] as ImageItem[],
   });
 
-  // Load product + categories
   useEffect(() => {
     async function load() {
       setLoading(true);
@@ -126,6 +156,11 @@ export default function EditProductPage() {
 
         const p = prodRes.data;
         if (p) {
+          const colors = Array.from(
+            new Set((p.variants || []).map((v) => v.color).filter(Boolean))
+          );
+          setVariantColors(colors);
+
           setForm({
             name: p.name,
             nameBn: p.nameBn || '',
@@ -143,6 +178,7 @@ export default function EditProductPage() {
             active: p.active,
             featured: p.featured,
             tryable: p.tryable,
+            freeDelivery: p.freeDelivery ?? false,
             lowStockAt: p.lowStockAt || 5,
             tags: p.tags || [],
             metaTitle: p.metaTitle || '',
@@ -151,6 +187,7 @@ export default function EditProductPage() {
               p.productImages?.map((img) => ({
                 url: img.url,
                 alt: img.alt || '',
+                color: img.color || null,
                 isPrimary: img.isPrimary,
               })) || [],
           });
@@ -172,10 +209,10 @@ export default function EditProductPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [productId]);
 
-  // ============================================
-  // Handlers
-  // ============================================
-  function setField<K extends keyof typeof form>(key: K, value: (typeof form)[K]) {
+  function setField<K extends keyof typeof form>(
+    key: K,
+    value: (typeof form)[K]
+  ) {
     setForm((f) => ({ ...f, [key]: value }));
   }
 
@@ -197,9 +234,31 @@ export default function EditProductPage() {
     );
   }
 
+  // Custom color handlers
+  function handleAddCustomColor() {
+    const c = customColorInput.trim();
+    if (!c) return;
+    if (variantColors.includes(c)) {
+      setCustomColorInput('');
+      setShowAddColor(false);
+      return;
+    }
+    setVariantColors([...variantColors, c]);
+    setCustomColorInput('');
+    setShowAddColor(false);
+  }
+
+  function handleRemoveVariantColor(color: string) {
+    if (!confirm(`Remove "${color}" from color list?`)) return;
+    setVariantColors(variantColors.filter((c) => c !== color));
+  }
+
+  // ============================================
   // Image management
+  // ============================================
   const [uploading, setUploading] = useState(false);
   const [imageUrlInput, setImageUrlInput] = useState('');
+  const [pendingColor, setPendingColor] = useState<string>('');
 
   async function handleImageUpload(files: FileList | null) {
     if (!files || files.length === 0) return;
@@ -207,9 +266,10 @@ export default function EditProductPage() {
     try {
       const result = await uploadImages(Array.from(files));
       const urls = result.map((r) => r.url);
-      const newImages = urls.map((url, i) => ({
+      const newImages: ImageItem[] = urls.map((url, i) => ({
         url,
         alt: '',
+        color: pendingColor || null,
         isPrimary: form.images.length === 0 && i === 0,
       }));
       setField('images', [...form.images, ...newImages]);
@@ -223,11 +283,12 @@ export default function EditProductPage() {
   function handleAddImageUrl() {
     const url = imageUrlInput.trim();
     if (!url) return;
-    const newImages = [
+    const newImages: ImageItem[] = [
       ...form.images,
       {
         url,
         alt: '',
+        color: pendingColor || null,
         isPrimary: form.images.length === 0,
       },
     ];
@@ -237,7 +298,6 @@ export default function EditProductPage() {
 
   function handleRemoveImage(idx: number) {
     const newImages = form.images.filter((_, i) => i !== idx);
-    // If we removed the primary, set first as primary
     if (newImages.length > 0 && !newImages.some((i) => i.isPrimary)) {
       newImages[0].isPrimary = true;
     }
@@ -255,6 +315,13 @@ export default function EditProductPage() {
   function handleImageAlt(idx: number, alt: string) {
     const newImages = form.images.map((img, i) =>
       i === idx ? { ...img, alt } : img
+    );
+    setField('images', newImages);
+  }
+
+  function handleImageColor(idx: number, color: string) {
+    const newImages = form.images.map((img, i) =>
+      i === idx ? { ...img, color: color || null } : img
     );
     setField('images', newImages);
   }
@@ -291,6 +358,7 @@ export default function EditProductPage() {
         active: form.active,
         featured: form.featured,
         tryable: form.tryable,
+        freeDelivery: form.freeDelivery,
         lowStockAt: Number(form.lowStockAt) || 5,
         tags: form.tags,
         metaTitle: form.metaTitle.trim() || null,
@@ -298,6 +366,7 @@ export default function EditProductPage() {
         productImages: form.images.map((img, i) => ({
           url: img.url,
           alt: img.alt || null,
+          color: img.color || null,
           position: i,
           isPrimary: img.isPrimary,
         })),
@@ -318,9 +387,6 @@ export default function EditProductPage() {
     }
   }
 
-  // ============================================
-  // Derived
-  // ============================================
   const finalPrice =
     form.price && form.discount >= 0
       ? Math.round(Number(form.price) * (1 - form.discount / 100))
@@ -330,13 +396,12 @@ export default function EditProductPage() {
       ? Math.round(Number(form.price) - Number(form.cost))
       : 0;
 
-  // ============================================
-  // Loading
-  // ============================================
   if (loading) {
     return (
       <div className="p-8 bg-[#F7F8FA] min-h-screen">
-        <div className="text-center text-[#8A8F98] py-16">Loading product...</div>
+        <div className="text-center text-[#8A8F98] py-16">
+          Loading product...
+        </div>
       </div>
     );
   }
@@ -432,19 +497,24 @@ export default function EditProductPage() {
 
             <div className="mt-3">
               <label className="block text-xs uppercase tracking-wide text-[#8A8F98] mb-1 font-medium">
-                Shape
+                Shape / Type
+                <span className="text-[#8A8F98] font-normal text-[10px] ml-1 normal-case">
+                  (pick or type new)
+                </span>
               </label>
-              <select
+              <input
+                type="text"
+                list="shape-options-edit"
                 value={form.shape}
                 onChange={(e) => setField('shape', e.target.value)}
+                placeholder="e.g. shirt, panjabi, hoodie"
                 className="w-full bg-[#F1F3F6] border border-transparent rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:bg-white focus:border-[#0F2A5C]"
-              >
+              />
+              <datalist id="shape-options-edit">
                 {SHAPES.map((s) => (
-                  <option key={s} value={s}>
-                    {s.charAt(0).toUpperCase() + s.slice(1)}
-                  </option>
+                  <option key={s} value={s} />
                 ))}
-              </select>
+              </datalist>
             </div>
           </section>
 
@@ -494,7 +564,6 @@ export default function EditProductPage() {
               </div>
             </div>
 
-            {/* Computed */}
             <div className="bg-[#F1F4F9] rounded-lg p-3 flex justify-between text-sm">
               <div>
                 <div className="text-[10px] uppercase text-[#8A8F98]">
@@ -614,7 +683,101 @@ export default function EditProductPage() {
                 />
                 Tryable
               </label>
+              <label className="flex items-center gap-2 text-sm cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={form.freeDelivery}
+                  onChange={(e) => setField('freeDelivery', e.target.checked)}
+                />
+                🚚 Free Delivery
+              </label>
             </div>
+          </section>
+
+          {/* ============================================ */}
+          {/* VARIANT COLORS — with custom add */}
+          {/* ============================================ */}
+          <section className="bg-white rounded-lg p-5 shadow-[0_2px_10px_rgba(15,42,92,0.06)]">
+            <h2 className="font-serif text-lg font-semibold text-[#0F2A5C] mb-1">
+              Variant Colors
+            </h2>
+            <p className="text-xs text-[#8A8F98] mb-4">
+              Colors available for this product. Used for color-specific image
+              assignment below.
+            </p>
+
+            <div className="flex flex-wrap gap-2 mb-3">
+              {variantColors.length === 0 && (
+                <span className="text-xs text-[#8A8F98] py-2">
+                  No colors yet — add one below
+                </span>
+              )}
+              {variantColors.map((c) => (
+                <span
+                  key={c}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium bg-[#F1F3F6] text-[#0F2A5C] border border-[#E8EBF0]"
+                >
+                  {c}
+                  <button
+                    type="button"
+                    onClick={() => handleRemoveVariantColor(c)}
+                    className="text-[#8A8F98] hover:text-red-600 ml-0.5"
+                  >
+                    ×
+                  </button>
+                </span>
+              ))}
+            </div>
+
+            {showAddColor ? (
+              <div className="flex gap-2 items-center">
+                <input
+                  type="text"
+                  value={customColorInput}
+                  onChange={(e) => setCustomColorInput(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault();
+                      handleAddCustomColor();
+                    }
+                    if (e.key === 'Escape') {
+                      setShowAddColor(false);
+                      setCustomColorInput('');
+                    }
+                  }}
+                  placeholder="e.g. Maroon, Sky Blue, Olive"
+                  autoFocus
+                  className="flex-1 bg-[#F1F3F6] border border-transparent rounded-lg px-3 py-2 text-sm focus:outline-none focus:bg-white focus:border-[#0F2A5C]"
+                />
+                <button
+                  type="button"
+                  onClick={handleAddCustomColor}
+                  disabled={!customColorInput.trim()}
+                  className="bg-[#0F2A5C] hover:bg-[#0A1F45] text-white px-4 py-2 rounded-lg text-sm font-semibold transition disabled:opacity-50"
+                >
+                  ✓ Add
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowAddColor(false);
+                    setCustomColorInput('');
+                  }}
+                  className="bg-[#F1F3F6] hover:bg-[#E3E6EB] text-[#5A6270] px-3 py-2 rounded-lg text-sm font-medium transition"
+                >
+                  Cancel
+                </button>
+              </div>
+            ) : (
+              <button
+                type="button"
+                onClick={() => setShowAddColor(true)}
+                className="inline-flex items-center gap-2 bg-[#F1F3F6] hover:bg-[#E3E6EB] text-[#0F2A5C] px-4 py-2.5 rounded-lg text-sm font-medium transition"
+              >
+                <span className="text-lg leading-none">+</span>
+                Add Custom Color
+              </button>
+            )}
           </section>
 
           {/* Tags */}
@@ -666,61 +829,142 @@ export default function EditProductPage() {
                 Add
               </button>
             </div>
+
+            <div className="mt-4">
+              <label className="block text-xs uppercase tracking-wide text-[#8A8F98] mb-1 font-medium">
+                Special Offers
+              </label>
+              <SpecialOfferPicker
+                value={form.tags.filter((t) => OFFER_SLUGS.includes(t))}
+                onChange={(newOfferTags) => {
+                  const OTHER_TAGS = form.tags.filter(
+                    (t) => !OFFER_SLUGS.includes(t)
+                  );
+                  setField('tags', [...OTHER_TAGS, ...newOfferTags]);
+                }}
+              />
+            </div>
           </section>
 
-          {/* Images */}
+          {/* ============================================ */}
+          {/* IMAGES — with color assignment */}
+          {/* ============================================ */}
           <section className="bg-white rounded-lg p-5 shadow-[0_2px_10px_rgba(15,42,92,0.06)]">
-            <h2 className="font-serif text-lg font-semibold text-[#0F2A5C] mb-4">
+            <h2 className="font-serif text-lg font-semibold text-[#0F2A5C] mb-1">
               Product Images
             </h2>
+            <p className="text-xs text-[#8A8F98] mb-4">
+              Assign each image to a color. Customer will see matching images
+              when they pick that color. Leave as <strong>All Colors</strong> for
+              fallback.
+            </p>
 
-            {/* Existing images */}
+            {variantColors.length === 0 && (
+              <div className="mb-4 bg-amber-50 border border-amber-200 text-amber-800 text-xs rounded-lg px-3 py-2">
+                ⚠️ Add variant colors above to assign color-specific images.
+              </div>
+            )}
+
+            {/* Existing images with color dropdown */}
             {form.images.length > 0 && (
-              <div className="grid grid-cols-4 gap-3 mb-4">
+              <div className="space-y-3 mb-5">
                 {form.images.map((img, i) => (
                   <div
                     key={i}
-                    className={`relative rounded-lg overflow-hidden border-2 ${
+                    className={`flex flex-col sm:flex-row gap-3 p-3 rounded-lg border-2 ${
                       img.isPrimary ? 'border-[#0F2A5C]' : 'border-[#E8EBF0]'
                     }`}
                   >
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img
-                      src={img.url}
-                      alt={img.alt || ''}
-                      className="w-full aspect-square object-cover"
-                    />
+                    {/* Preview */}
+                    <div className="relative w-full sm:w-24 h-24 rounded-lg overflow-hidden bg-[#F1F3F6] flex-shrink-0">
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img
+                        src={img.url}
+                        alt={img.alt || ''}
+                        className="w-full h-full object-cover"
+                      />
+                      {img.isPrimary && (
+                        <div className="absolute top-1 left-1 bg-[#0F2A5C] text-white text-[9px] px-1.5 py-0.5 rounded font-bold">
+                          PRIMARY
+                        </div>
+                      )}
+                    </div>
 
-                    {img.isPrimary && (
-                      <div className="absolute top-1 left-1 bg-[#0F2A5C] text-white text-[9px] px-1.5 py-0.5 rounded">
-                        PRIMARY
+                    {/* Controls */}
+                    <div className="flex-1 grid grid-cols-1 sm:grid-cols-2 gap-2">
+                      <div>
+                        <label className="block text-[10px] uppercase tracking-wide text-[#8A8F98] mb-1 font-semibold">
+                          Color
+                        </label>
+                        <select
+                          value={img.color || ''}
+                          onChange={(e) => handleImageColor(i, e.target.value)}
+                          className="w-full bg-[#F1F3F6] border border-transparent rounded-lg px-2.5 py-2 text-sm focus:outline-none focus:bg-white focus:border-[#0F2A5C]"
+                        >
+                          <option value="">🎨 All Colors (Fallback)</option>
+                          {variantColors.map((c) => (
+                            <option key={c} value={c}>
+                              {c}
+                            </option>
+                          ))}
+                        </select>
                       </div>
-                    )}
 
-                    <div className="absolute top-1 right-1 flex gap-1">
-                      {!img.isPrimary && (
+                      <div>
+                        <label className="block text-[10px] uppercase tracking-wide text-[#8A8F98] mb-1 font-semibold">
+                          Alt text
+                        </label>
+                        <input
+                          type="text"
+                          value={img.alt}
+                          onChange={(e) => handleImageAlt(i, e.target.value)}
+                          placeholder="e.g. Red shirt front view"
+                          className="w-full bg-[#F1F3F6] border border-transparent rounded-lg px-2.5 py-2 text-sm focus:outline-none focus:bg-white focus:border-[#0F2A5C]"
+                        />
+                      </div>
+
+                      <div className="sm:col-span-2 flex gap-2">
+                        {!img.isPrimary && (
+                          <button
+                            type="button"
+                            onClick={() => handleSetPrimary(i)}
+                            className="flex-1 bg-[#F1F3F6] hover:bg-[#E3E6EB] text-[#0F2A5C] text-xs px-3 py-1.5 rounded font-semibold transition"
+                          >
+                            ★ Set Primary
+                          </button>
+                        )}
                         <button
                           type="button"
-                          onClick={() => handleSetPrimary(i)}
-                          className="bg-white/90 hover:bg-white text-[#0F2A5C] text-[10px] px-1.5 py-0.5 rounded"
-                          title="Set as primary"
+                          onClick={() => handleRemoveImage(i)}
+                          className="bg-red-50 hover:bg-red-100 text-red-600 text-xs px-3 py-1.5 rounded font-semibold transition"
                         >
-                          ★
+                          🗑 Remove
                         </button>
-                      )}
-                      <button
-                        type="button"
-                        onClick={() => handleRemoveImage(i)}
-                        className="bg-white/90 hover:bg-red-50 text-red-600 text-[10px] px-1.5 py-0.5 rounded"
-                        title="Remove"
-                      >
-                        ×
-                      </button>
+                      </div>
                     </div>
                   </div>
                 ))}
               </div>
             )}
+
+            {/* Color selector for NEW uploads */}
+            <div className="mb-3 p-3 bg-[#F7F8FA] rounded-lg">
+              <label className="block text-xs uppercase tracking-wide text-[#8A8F98] mb-1.5 font-semibold">
+                Add new images as:
+              </label>
+              <select
+                value={pendingColor}
+                onChange={(e) => setPendingColor(e.target.value)}
+                className="w-full bg-white border border-[#E8EBF0] rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[#0F2A5C]"
+              >
+                <option value="">🎨 All Colors (Fallback)</option>
+                {variantColors.map((c) => (
+                  <option key={c} value={c}>
+                    {c}
+                  </option>
+                ))}
+              </select>
+            </div>
 
             {/* Upload */}
             <label
@@ -740,15 +984,20 @@ export default function EditProductPage() {
               />
               <div className="text-sm text-[#5A6270]">
                 {uploading ? (
-                  <span className="text-[#0F2A5C] font-medium">⏳ Uploading...</span>
+                  <span className="text-[#0F2A5C] font-medium">
+                    ⏳ Uploading...
+                  </span>
                 ) : (
                   <>
                     <div className="text-2xl mb-1">📷</div>
                     <div className="font-medium text-[#0F2A5C]">
-                      Click to upload or drag images here
+                      Click to upload images
                     </div>
                     <div className="text-xs text-[#8A8F98] mt-1">
-                      PNG, JPG up to 5MB
+                      They&apos;ll be assigned to{' '}
+                      <strong>
+                        {pendingColor || 'All Colors (Fallback)'}
+                      </strong>
                     </div>
                   </>
                 )}
