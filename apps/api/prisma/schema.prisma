@@ -1,15 +1,14 @@
 // ============================================
 // TANAVIA - Prisma Schema
-// Database: PostgreSQL (Neon)
+// Database: MySQL
 // ============================================
 
 generator client {
   provider = "prisma-client-js"
 }
 datasource db {
-  provider  = "postgresql"
+  provider  = "mysql"
   url       = env("DATABASE_URL")
-  directUrl = env("DIRECT_URL")
 }
 
 // ============================================
@@ -256,8 +255,8 @@ model Product {
   tryable       Boolean       @default(true)
   freeDelivery  Boolean       @default(false)
   shape         String        @default("tee")
-  images        String[]
-  tags          String[]
+  images        Json          @default("[]")
+  tags          Json          @default("[]")
   rating        Float         @default(0)
   reviewCount   Int           @default(0)
   soldCount     Int           @default(0)
@@ -985,7 +984,7 @@ model Review {
   name       String
   rating     Int
   comment    String?       @db.Text
-  images     String[]
+  images     Json          @default("[]")
   approved   Boolean       @default(false)  // legacy — keep for migration
   status     ReviewStatus  @default(PENDING)
   reply      String?       @db.Text
