@@ -22,6 +22,7 @@ type Status =
 interface ListFilters {
   search?: string;
   segment?: string;
+  source?: string;
   sort?: 'newest' | 'recently-ordered' | 'most-orders' | 'highest-spend';
   page?: number;
   limit?: number;
@@ -49,13 +50,18 @@ export class CustomerService {
     // Build where
     const where: Prisma.CustomerWhereInput = {};
 
-    // Search (name, phone, email)
+    // ---- Source filter (MANUAL / ONLINE / POS) ----
+    if (filters.source && filters.source !== 'ALL') {
+      where.source = filters.source.toUpperCase();
+    }
+
+    // Search (name, phone, email) — MySQL is case-insensitive by default
     if (filters.search) {
       const raw = filters.search.trim();
       const normalized = normalizePhone(raw);
       const orClauses: Prisma.CustomerWhereInput[] = [
-        { name: { contains: raw, mode: 'insensitive' } },
-        { email: { contains: raw, mode: 'insensitive' } },
+        { name: { contains: raw } },
+        { email: { contains: raw } },
       ];
       if (normalized) {
         orClauses.push({ phone: normalized });
@@ -96,7 +102,6 @@ export class CustomerService {
     if (filters.sort === 'newest') orderBy = { createdAt: 'desc' };
     else if (filters.sort === 'recently-ordered')
       orderBy = { updatedAt: 'desc' };
-    // most-orders and highest-spend handled after query
 
     // Fetch customers with orders relation count
     const [rawCustomers, total] = await Promise.all([
@@ -111,6 +116,10 @@ export class CustomerService {
           phone: true,
           email: true,
           userId: true,
+          source: true,
+          totalOrders: true,
+          totalSpent: true,
+          lastOrderAt: true,
           blockedAt: true,
           blockedReason: isAdmin ? true : false,
           blockedById: isAdmin ? true : false,
@@ -176,7 +185,6 @@ export class CustomerService {
       else if (nonCancelled === 0) status = 'NEW';
       else status = 'INACTIVE';
 
-      // Return rate (compute later — need returns query)
       const returnRate = 0;
       const needsReview = false;
 
@@ -186,6 +194,10 @@ export class CustomerService {
         phone: c.phone,
         email: c.email,
         userId: c.userId,
+        source: c.source,
+        totalOrdersStored: c.totalOrders,
+        totalSpentStored: Number(c.totalSpent),
+        lastOrderAtStored: c.lastOrderAt,
         createdAt: c.createdAt,
         updatedAt: c.updatedAt,
         orders: nonCancelled,
@@ -261,11 +273,9 @@ export class CustomerService {
 
     const [total, newThisMonth, active30d, repeat] = await Promise.all([
       prisma.customer.count(),
-
       prisma.customer.count({
         where: { createdAt: { gte: startOfMonth } },
       }),
-
       prisma.customer.count({
         where: {
           orders: {
@@ -276,7 +286,6 @@ export class CustomerService {
           },
         },
       }),
-
       prisma.customer.count({
         where: {
           orders: {
@@ -290,7 +299,6 @@ export class CustomerService {
       return { total, newThisMonth, active30d, repeat };
     }
 
-    // Staff sees fewer cards
     return { total, active30d };
   }
 
@@ -309,8 +317,8 @@ export class CustomerService {
       const raw = filters.search.trim();
       const normalized = normalizePhone(raw);
       const orClauses: Prisma.CustomerWhereInput[] = [
-        { name: { contains: raw, mode: 'insensitive' } },
-        { email: { contains: raw, mode: 'insensitive' } },
+        { name: { contains: raw } },
+        { email: { contains: raw } },
       ];
       if (normalized) orClauses.push({ phone: normalized });
       else orClauses.push({ phone: { contains: raw } });
@@ -326,14 +334,12 @@ export class CustomerService {
     // Count each segment
     const [all, newCount, active, repeat, blocked] = await Promise.all([
       prisma.customer.count({ where: searchWhere }),
-
       prisma.customer.count({
         where: {
           ...searchWhere,
           orders: { none: { status: { not: 'CANCELLED' } } },
         },
       }),
-
       prisma.customer.count({
         where: {
           ...searchWhere,
@@ -345,7 +351,6 @@ export class CustomerService {
           },
         },
       }),
-
       prisma.customer.count({
         where: {
           ...searchWhere,
@@ -354,7 +359,6 @@ export class CustomerService {
           },
         },
       }),
-
       prisma.customer.count({
         where: { ...searchWhere, blockedAt: { not: null } },
       }),
@@ -366,7 +370,6 @@ export class CustomerService {
     let returnProne = 0;
 
     if (isAdmin) {
-      // Fetch all customers for computation (ok for small datasets)
       const customers = await prisma.customer.findMany({
         where: searchWhere,
         select: {
@@ -390,10 +393,8 @@ export class CustomerService {
               ).createdAt
             : null;
 
-        // VIP
         if (orderCount >= 5 || totalSpent >= 50000) vip++;
 
-        // At risk: 2+ orders, last > 60 days ago
         if (orderCount >= 2 && lastOrder) {
           const daysSince = Math.floor(
             (Date.now() - new Date(lastOrder).getTime()) / (1000 * 60 * 60 * 24)
@@ -401,7 +402,6 @@ export class CustomerService {
           if (daysSince > 60) atRisk++;
         }
 
-        // Return-prone: 3+ returns
         const returnCount = await prisma.return.count({
           where: {
             order: { customerId: c.id },
@@ -440,6 +440,10 @@ export class CustomerService {
         phone: true,
         email: true,
         userId: true,
+        source: true,
+        totalOrders: true,
+        totalSpent: true,
+        lastOrderAt: true,
         blockedAt: true,
         blockedReason: isAdmin ? true : false,
         blockedById: isAdmin ? true : false,
@@ -525,6 +529,94 @@ export class CustomerService {
   }
 
   // ============================================
+  // Upsert from order (auto-create/update)
+  // ============================================
+  static async upsertFromOrder(
+    tx: any,
+    input: {
+      name: string;
+      phone: string;
+      email?: string | null;
+      source: 'ONLINE' | 'POS';
+      orderTotal: number;
+      address?: string | null;
+      district?: string | null;
+      upazila?: string | null;
+      userId?: string | null;
+    }
+  ) {
+    const phone = input.phone.trim().replace(/\D/g, '');
+    if (!phone || phone.length < 11) return null;
+
+    let customer = await tx.customer.findUnique({ where: { phone } });
+
+    if (!customer) {
+      customer = await tx.customer.create({
+        data: {
+          name: input.name.trim() || 'Guest Customer',
+          phone,
+          email: input.email || null,
+          source: input.source,
+          userId: input.userId ?? null,
+          totalOrders: 1,
+          totalSpent: input.orderTotal,
+          lastOrderAt: new Date(),
+        },
+      });
+
+      await tx.customerTag.create({
+        data: { customerId: customer.id, tag: input.source === 'ONLINE' ? 'online-customer' : 'pos-customer' },
+      });
+      await tx.customerTag.create({
+        data: { customerId: customer.id, tag: 'new-customer' },
+      });
+    } else {
+      customer = await tx.customer.update({
+        where: { id: customer.id },
+        data: {
+          name: input.name.trim() || customer.name,
+          email: input.email || customer.email,
+          userId: customer.userId ? customer.userId : (input.userId ?? null),
+          totalOrders: { increment: 1 },
+          totalSpent: { increment: input.orderTotal },
+          lastOrderAt: new Date(),
+        },
+      });
+
+      if (customer.totalOrders === 2) {
+        await tx.customerTag.deleteMany({ where: { customerId: customer.id, tag: 'new-customer' } });
+        await tx.customerTag.create({ data: { customerId: customer.id, tag: 'repeat-customer' } });
+      }
+    }
+
+    // 🟢 Save Address
+    if (input.address && input.userId) {
+      const existing = await tx.address.findFirst({
+        where: { userId: input.userId, address: input.address },
+      });
+      if (!existing) {
+        await tx.address.updateMany({
+          where: { userId: input.userId },
+          data: { isDefault: false },
+        });
+        await tx.address.create({
+          data: {
+            userId: input.userId,
+            fullName: input.name || 'Guest', // 🎯 Added fullName
+            phone: input.phone,               // 🎯 Added phone
+            address: input.address,
+            district: input.district || 'Unknown',
+            upazila: input.upazila || 'Unknown',
+            isDefault: true,
+          },
+        });
+      }
+    }
+
+    return customer;
+  }
+
+  // ============================================
   // Create
   // ============================================
   static async create(
@@ -538,7 +630,6 @@ export class CustomerService {
       );
     }
 
-    // Check duplicate
     const existing = await prisma.customer.findUnique({
       where: { phone },
       select: { id: true, name: true, phone: true },
@@ -554,12 +645,14 @@ export class CustomerService {
         name: input.name.trim(),
         phone,
         email: input.email?.trim() || null,
+        source: 'MANUAL',
       },
       select: {
         id: true,
         name: true,
         phone: true,
         email: true,
+        source: true,
         createdAt: true,
       },
     });
@@ -635,7 +728,6 @@ export class CustomerService {
       select: { id: true, name: true, blockedAt: true, blockedReason: true },
     });
 
-    // AuditLog
     await prisma.auditLog.create({
       data: {
         userId: actorId,
@@ -669,9 +761,7 @@ export class CustomerService {
         userId: actorId,
         actor: actorId,
         action: 'CUSTOMER_UNBLOCK',
-        detail: `Unblocked customer ${updated.name} (${id})${
-          reason ? `: ${reason}` : ''
-        }`,
+        detail: `Unblocked customer ${updated.name} (${id})${reason ? `: ${reason}` : ''}`,
       },
     });
 
@@ -760,6 +850,49 @@ export class CustomerService {
       where: { userId: customer.userId },
       orderBy: [{ isDefault: 'desc' }, { createdAt: 'desc' }],
     });
+  }
+
+  // ============================================
+  // Analytics (Districts + Products)
+  // ============================================
+  static async getAnalytics(prisma: PrismaClient) {
+    const districtGroups = await prisma.order.groupBy({
+      by: ['district'],
+      _count: { id: true },
+      _sum: { total: true },
+      orderBy: { _count: { id: 'desc' } },
+      take: 20, // 🟢 Increased for search
+    });
+
+    const productGroups = await prisma.orderItem.groupBy({
+      by: ['productId'],
+      _sum: { qty: true },
+      orderBy: { _sum: { qty: 'desc' } },
+      take: 20, // 🟢 Increased for search
+    });
+
+    const productIds = productGroups.map((p) => p.productId);
+    const products = await prisma.product.findMany({
+      where: { id: { in: productIds } },
+      select: { id: true, name: true, productImages: { take: 1, select: { url: true } } },
+    });
+
+    return {
+      topDistricts: districtGroups.map((g) => ({
+        district: g.district || 'Unknown',
+        orders: g._count.id,
+        revenue: Number(g._sum.total || 0),
+      })),
+      topProducts: productGroups.map((pg) => {
+        const p = products.find((prod) => prod.id === pg.productId);
+        return {
+          productId: pg.productId,
+          name: p?.name || 'Unknown',
+          image: p?.productImages?.[0]?.url || null,
+          totalSold: pg._sum.qty || 0,
+        };
+      }),
+    };
   }
 
   // ============================================
@@ -887,7 +1020,6 @@ export class CustomerService {
     prisma: PrismaClient,
     actorId: string
   ) {
-    // Fetch all matching (no pagination)
     const result = await this.list(
       { ...filters, limit: 10000, role: 'ADMIN' },
       prisma
@@ -933,7 +1065,6 @@ export class CustomerService {
       )
       .join('\n');
 
-    // AuditLog
     await prisma.auditLog.create({
       data: {
         userId: actorId,

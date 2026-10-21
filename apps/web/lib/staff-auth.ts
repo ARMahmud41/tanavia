@@ -7,13 +7,15 @@ import { getCurrentUser, getToken, type User } from './auth';
 export function isStaff(): boolean {
   const u = getCurrentUser();
   return (
-    u?.role === 'STAFF' || u?.role === 'MANAGER' || u?.role === 'ADMIN'
+    u?.role === 'STAFF' ||
+    (u?.role as string) === 'MANAGER' ||
+    u?.role === 'ADMIN'
   );
 }
 
 export function isManager(): boolean {
   const u = getCurrentUser();
-  return u?.role === 'MANAGER' || u?.role === 'ADMIN';
+  return (u?.role as string) === 'MANAGER' || u?.role === 'ADMIN';
 }
 
 export function getStaffToken(): string | null {

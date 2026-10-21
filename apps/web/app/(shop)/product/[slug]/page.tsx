@@ -2,6 +2,7 @@ import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { api } from '@/lib/api';
 import { ProductView } from '@/components/ProductView';
+import { ReviewSection } from '@/components/ReviewSection'; // 🎯 নতুন যোগ করা
 
 interface Variant {
   id: string;
@@ -83,7 +84,7 @@ export default async function ProductDetailPage({
             >
               {typeof product.category === 'string'
                 ? product.category
-                : product.category?.nameBn || product.category?.name || ''}
+                : product.category?.name || ''}
             </Link>
           </>
         )}
@@ -92,6 +93,11 @@ export default async function ProductDetailPage({
       {/* Product view (client component — handles gallery, variants, add to cart) */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-10 lg:gap-16">
         <ProductView product={product} />
+      </div>
+
+      {/* 🎯 Review Section - নতুন যোগ করা */}
+      <div className="mt-12">
+        <ReviewSection productId={product.id} />
       </div>
     </div>
   );

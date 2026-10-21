@@ -62,7 +62,7 @@ export async function courierWebhookRoutes(app: FastifyInstance) {
 
       return reply.send({ status: 'ok' });
     } catch (err) {
-      app.log.error('Steadfast webhook error:', err);
+      app.log.error({ err }, 'Steadfast webhook error:');
       return reply.code(200).send({ status: 'error' });
     }
   });
@@ -103,7 +103,7 @@ export async function courierWebhookRoutes(app: FastifyInstance) {
 
       return reply.send({ status: 'ok' });
     } catch (err) {
-      app.log.error('Pathao webhook error:', err);
+      app.log.error({ err }, 'Pathao webhook error:');
       return reply.code(200).send({ status: 'error' });
     }
   });
@@ -144,7 +144,7 @@ export async function courierWebhookRoutes(app: FastifyInstance) {
 
       return reply.send({ status: 'ok' });
     } catch (err) {
-      app.log.error('RedX webhook error:', err);
+      app.log.error({ err }, 'RedX webhook error:');
       return reply.code(200).send({ status: 'error' });
     }
   });

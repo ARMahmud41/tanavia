@@ -9,7 +9,8 @@ interface Notification {
   id: string;
   type: string;
   title: string;
-  message: string;
+  message?: string;
+  body?: string; // 🎯 Backend returns 'body'
   read: boolean;
   createdAt: string;
 }
@@ -26,7 +27,13 @@ export default function StaffNotificationsPage() {
           '/api/staff/notifications',
           { token }
         );
-        setItems(res.data || []);
+        
+        // 🎯 FIX: safely extract array from response
+        const list = Array.isArray(res.data)
+          ? res.data
+          : (res.data as any)?.items || [];
+        setItems(list);
+
       } catch {
         setItems([]);
       } finally {
@@ -129,7 +136,8 @@ export default function StaffNotificationsPage() {
                     className="text-xs mt-0.5"
                     style={{ color: 'var(--staff-muted)' }}
                   >
-                    {n.message}
+                    {/* 🎯 FIX: fallback to body if message is not present */}
+                    {n.message || n.body || ''}
                   </div>
                   <div
                     className="text-[10px] mt-1"

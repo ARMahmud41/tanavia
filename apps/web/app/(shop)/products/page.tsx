@@ -1,10 +1,11 @@
 'use client';
 
 import Link from 'next/link';
-import { useEffect, useState, useCallback, useMemo } from 'react';
+import { useEffect, useState, useCallback, useMemo, Suspense } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import { api } from '@/lib/api';
 import { ProductCard, type Product } from '@/components/ProductCard';
+import { ComingSoon } from '@/components/ComingSoon';
 
 // ============================================
 // Constants — only TOP categories (no fake sub data)
@@ -24,9 +25,9 @@ const SORTS = [
 ];
 
 // ============================================
-// Page
+// Products Content (uses useSearchParams)
 // ============================================
-export default function ProductsPage() {
+function ProductsContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
 
@@ -149,7 +150,6 @@ export default function ProductsPage() {
     router.push('/products');
   }
 
-  // Clear only the subcategory (q) but keep category
   function clearSub() {
     setPage(1);
     const qs = new URLSearchParams();
@@ -159,7 +159,6 @@ export default function ProductsPage() {
     router.push(q ? `/products?${q}` : '/products');
   }
 
-  // Clear only the offer but keep category/q
   function clearOffer() {
     setPage(1);
     const qs = new URLSearchParams();
@@ -264,7 +263,6 @@ export default function ProductsPage() {
                   </button>
                 </div>
 
-                {/* Real subcategories from products (only when this category is active + expanded) */}
                 {isExpanded && isActive && realSubCategories.length > 0 && (
                   <ul className="mt-1 mb-2 space-y-0.5">
                     {realSubCategories.map((sub) => {
@@ -543,22 +541,7 @@ export default function ProductsPage() {
                 ))}
               </div>
             ) : products.length === 0 ? (
-              <div className="text-center py-16 bg-sand rounded-lg border border-line">
-                <div className="text-4xl mb-3">🔍</div>
-                <p className="font-serif text-xl font-semibold text-ink mb-2">
-                  No products found
-                </p>
-                <p className="text-sm text-muted mb-5">
-                  {activeOffer
-                    ? `No products match this offer.`
-                    : activeSub
-                    ? `No products match "${activeSub}"`
-                    : 'Try a different filter or browse all products.'}
-                </p>
-                <button onClick={clearAll} className="btn text-sm">
-                  Clear Filters
-                </button>
-              </div>
+              <ComingSoon title="No Products Found" />
             ) : (
               <>
                 <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3 sm:gap-4">
@@ -594,5 +577,43 @@ export default function ProductsPage() {
         </div>
       </div>
     </div>
+  );
+}
+
+// ============================================
+// Page (Suspense wrapper for useSearchParams)
+// ============================================
+export default function ProductsPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="w-full bg-white">
+          <div className="w-full px-4 sm:px-6 lg:px-8 py-4 sm:py-6">
+            <div className="grid grid-cols-1 lg:grid-cols-[240px_minmax(0,1fr)] gap-6 lg:gap-8">
+              <aside className="hidden lg:block">
+                <div className="animate-pulse space-y-3">
+                  <div className="h-4 bg-[#F1F3F6] rounded w-32" />
+                  <div className="h-3 bg-[#F1F3F6] rounded w-full" />
+                  <div className="h-3 bg-[#F1F3F6] rounded w-4/5" />
+                </div>
+              </aside>
+              <main className="min-w-0">
+                <div className="h-12 bg-[#F1F3F6] rounded-full animate-pulse mb-4" />
+                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3 sm:gap-4">
+                  {[1, 2, 3, 4, 5, 6, 7, 8].map((i) => (
+                    <div
+                      key={i}
+                      className="aspect-[3/4] bg-[#F1F3F6] rounded animate-pulse"
+                    />
+                  ))}
+                </div>
+              </main>
+            </div>
+          </div>
+        </div>
+      }
+    >
+      <ProductsContent />
+    </Suspense>
   );
 }

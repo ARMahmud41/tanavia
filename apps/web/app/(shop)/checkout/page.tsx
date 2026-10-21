@@ -5,7 +5,6 @@ import { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import {
   getCart,
-  setCart,
   clearCart,
   clearCartBackup,
   restoreCartFromBackup,
@@ -16,13 +15,15 @@ import {
 } from '@/lib/cart';
 import { api } from '@/lib/api';
 import { tk } from '@/lib/format';
+import { BD_DISTRICTS, getUpazilas } from '@/lib/bd-locations';
+import { SearchableSelect } from '@/components/SearchableSelect';
 
-const DISTRICTS = [
-  'Dhaka', 'Chattogram', 'Sylhet', 'Khulna', 'Rajshahi', 'Barishal',
-  'Rangpur', 'Mymensingh', 'Cumilla', 'Narayanganj', 'Gazipur',
-  'Bogura', 'Jashore', 'CoxsBazar', 'Dinajpur', 'Pabna', 'Noakhali',
-  'Feni', 'Brahmanbaria', 'Tangail', 'Kushtia', 'Faridpur',
-];
+// ============================================
+// Delivery constants
+// ============================================
+const DELIVERY_INSIDE_CTG = 80;
+const DELIVERY_OUTSIDE_CTG = 130;
+const FREE_DELIVERY_THRESHOLD = 5000;
 
 interface PaymentOption {
   value: string;
@@ -38,12 +39,16 @@ const PAYMENT_METHODS: PaymentOption[] = [
   { value: 'CARD', label: 'Card', logo: '/logos/card.png' },
 ];
 
+type Area = 'inside-chattogram' | 'outside-chattogram';
+
 interface FormData {
   customerName: string;
   customerPhone: string;
   customerEmail: string;
   address: string;
+  area: Area;
   district: string;
+  upazila: string;
   note: string;
   paymentMethod: string;
   paymentTxId: string;
@@ -65,6 +70,8 @@ export default function CheckoutPage() {
   const [items, setItems] = useState<CartItem[]>([]);
   const [mounted, setMounted] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const [relatedProducts, setRelatedProducts] = useState<any[]>([]);
+  const [paymentSettings, setPaymentSettings] = useState<any>(null);
 
   // Stock validation state
   const [stockIssues, setStockIssues] = useState<string[]>([]);
@@ -77,7 +84,9 @@ export default function CheckoutPage() {
     customerPhone: '',
     customerEmail: '',
     address: '',
-    district: 'Dhaka',
+    area: 'inside-chattogram',
+    district: 'Chattogram',
+    upazila: '',
     note: '',
     paymentMethod: 'COD',
     paymentTxId: '',
@@ -114,6 +123,46 @@ export default function CheckoutPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mounted, items.length]);
 
+  // Load related products & payment settings
+  useEffect(() => {
+    async function loadData() {
+      try {
+        const [relatedRes, paymentRes] = await Promise.all([
+          api.get<any[]>('/api/products?limit=4').catch(() => ({ data: [] })),
+          // 🎯 পাবলিক methods এন্ডপয়েন্ট ব্যবহার করা হলো
+          api.get<any>('/api/payments/methods').catch(() => ({ data: null })),
+        ]);
+        
+        setRelatedProducts(relatedRes.data || []);
+        
+        // 🎯 methods রেসপন্স থেকে ডাটা ম্যাপ করা হলো
+        const methodsData = paymentRes?.data;
+        if (methodsData) {
+          setPaymentSettings({
+            bkash: { 
+              number: methodsData.numbers?.BKASH, 
+              type: methodsData.types?.BKASH || 'Personal',
+              enabled: methodsData.enabled?.BKASH 
+            },
+            nagad: { 
+              number: methodsData.numbers?.NAGAD, 
+              type: methodsData.types?.NAGAD || 'Personal',
+              enabled: methodsData.enabled?.NAGAD 
+            },
+            rocket: { 
+              number: methodsData.numbers?.ROCKET, 
+              type: methodsData.types?.ROCKET || 'Personal',
+              enabled: methodsData.enabled?.ROCKET 
+            },
+          });
+        }
+      } catch (err) {
+        console.error('Failed to load checkout data', err);
+      }
+    }
+    loadData();
+  }, []);
+
   if (!mounted) {
     return (
       <div className="container-wrap py-16 text-center text-muted">
@@ -124,12 +173,41 @@ export default function CheckoutPage() {
 
   if (items.length === 0) return null;
 
+  // ============================================
+  // Derived: upazilas based on area + district
+  // ============================================
+  const availableUpazilas =
+    form.area === 'inside-chattogram'
+      ? getUpazilas('Chattogram')
+      : form.district
+      ? getUpazilas(form.district)
+      : [];
+
+  const allDistricts = BD_DISTRICTS.map((d) => d.name).sort();
+
+  // ============================================
+  // Totals
+  // ============================================
   const subtotal = items.reduce((sum, item) => {
     const finalPrice = Math.round(item.price * (1 - item.discount / 100));
     return sum + finalPrice * item.qty;
   }, 0);
 
-  // Validate stock for all cart items
+  // Delivery charge
+  let deliveryCharge = 0;
+  if (subtotal < FREE_DELIVERY_THRESHOLD) {
+    deliveryCharge =
+      form.area === 'inside-chattogram'
+        ? DELIVERY_INSIDE_CTG
+        : DELIVERY_OUTSIDE_CTG;
+  }
+
+  const grandTotal = subtotal + deliveryCharge;
+  const isFreeDelivery = subtotal >= FREE_DELIVERY_THRESHOLD;
+
+  // ============================================
+  // Validate stock
+  // ============================================
   async function validateStock() {
     if (items.length === 0) return;
 
@@ -140,7 +218,6 @@ export default function CheckoutPage() {
       const issues: string[] = [];
 
       for (const item of items) {
-        // Fetch product to get latest stock
         const productSlug = item.slug;
         const res = await api.get<{
           variants: Array<{
@@ -159,7 +236,9 @@ export default function CheckoutPage() {
         );
 
         if (!variant) {
-          issues.push(`${item.name} (${item.size}/${item.color}) — not available`);
+          issues.push(
+            `${item.name} (${item.size}/${item.color}) — not available`
+          );
           continue;
         }
 
@@ -199,7 +278,6 @@ export default function CheckoutPage() {
   }
 
   function handleCancel() {
-    // If this was a buy-now flow, restore the previous cart
     if (hasBuyNowSession()) {
       restoreCartFromBackup();
     }
@@ -230,6 +308,14 @@ export default function CheckoutPage() {
       setError('Address must be at least 10 characters');
       return;
     }
+    if (form.area === 'outside-chattogram' && !form.district) {
+      setError('Please select a district');
+      return;
+    }
+    if (!form.upazila.trim()) {
+      setError('Please select / enter your upazila / thana');
+      return;
+    }
     if (needsTxId && form.paymentTxId.trim().length < 4) {
       setError('Please enter the Transaction ID (at least 4 characters)');
       return;
@@ -243,7 +329,9 @@ export default function CheckoutPage() {
         customerPhone: form.customerPhone.trim(),
         customerEmail: form.customerEmail.trim() || undefined,
         address: form.address.trim(),
+        area: form.area,
         district: form.district,
+        upazila: form.upazila.trim(),
         note: form.note.trim() || undefined,
         paymentMethod: form.paymentMethod,
         paymentTxId: needsTxId ? form.paymentTxId.trim() : undefined,
@@ -261,7 +349,6 @@ export default function CheckoutPage() {
       );
       if (!res.data) throw new Error('Order placement failed');
 
-      // Clear both current cart and any buy-now backup
       clearCart();
       clearCartBackup();
 
@@ -347,53 +434,118 @@ export default function CheckoutPage() {
               </section>
 
               {/* Step 2 — Delivery */}
-              <section className="bg-white rounded-lg shadow-[0_2px_10px_rgba(15,42,92,0.06)] p-5">
+              <section className="bg-white rounded-lg shadow-[0_2px_10px_rgba(15,42,92,0.06)] p-5 pt-5">
                 <SectionHeader step={2} title="Delivery" />
-
                 <div className="space-y-3">
-                  <div className="relative">
-                    <span className="absolute left-3.5 top-3.5 text-[#8A8F98] text-base">
-                      📍
-                    </span>
-                    <textarea
-                      required
-                      rows={2}
-                      value={form.address}
-                      onChange={(e) => update('address', e.target.value)}
-                      placeholder="Full Address"
-                      className={inputClass + ' pl-11 resize-none'}
-                    />
+                  <textarea
+                    required
+                    rows={2}
+                    value={form.address}
+                    onChange={(e) => update('address', e.target.value)}
+                    placeholder="Your Address (House / Road / Village)"
+                    className={inputClass + ' resize-none'}
+                  />
+
+                  {/* Area */}
+                  <div>
+                    <label className="block text-xs font-semibold text-[#0F2A5C] mb-1.5">
+                      Select Area <span className="text-red-500">*</span>
+                    </label>
+                    <select
+                      value={form.area}
+                      onChange={(e) => {
+                        const newArea = e.target.value as Area;
+                        update('area', newArea);
+                        if (newArea === 'inside-chattogram') {
+                          update('district', 'Chattogram');
+                          update('upazila', '');
+                        } else {
+                          update('district', '');
+                          update('upazila', '');
+                        }
+                      }}
+                      className={inputClass + ' cursor-pointer appearance-none'}
+                    >
+                      <option value="inside-chattogram">
+                        Inside Chattogram — ৳{DELIVERY_INSIDE_CTG}
+                      </option>
+                      <option value="outside-chattogram">
+                        Outside Chattogram — ৳{DELIVERY_OUTSIDE_CTG}
+                      </option>
+                    </select>
                   </div>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                    <div className="relative">
-                      <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-[#8A8F98] text-sm">
-                        🏙
-                      </span>
-                      <select
+
+                  {/* District — only for outside Chattogram */}
+                  {form.area === 'outside-chattogram' && (
+                    <div>
+                      <label className="block text-xs font-semibold text-[#0F2A5C] mb-1.5">
+                        Select District <span className="text-red-500">*</span>
+                      </label>
+                      <SearchableSelect
                         value={form.district}
-                        onChange={(e) => update('district', e.target.value)}
-                        className={inputClass + ' pl-11 appearance-none cursor-pointer'}
-                      >
-                        {DISTRICTS.map((d) => (
-                          <option key={d} value={d}>
-                            {d}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-                    <div className="relative">
-                      <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-[#8A8F98] text-sm">
-                        📝
-                      </span>
-                      <input
-                        type="text"
-                        value={form.note}
-                        onChange={(e) => update('note', e.target.value)}
-                        placeholder="Note (optional)"
-                        className={inputClass + ' pl-11'}
+                        onChange={(v) => {
+                          update('district', v);
+                          update('upazila', '');
+                        }}
+                        options={allDistricts}
+                        placeholder="Search district..."
+                        emptyMessage="No district found"
                       />
                     </div>
-                  </div>
+                  )}
+
+                  {/* Upazila — inside Chattogram */}
+                  {form.area === 'inside-chattogram' && (
+                    <div>
+                      <label className="block text-xs font-semibold text-[#0F2A5C] mb-1.5">
+                        Select Upazila / Thana{' '}
+                        <span className="text-red-500">*</span>
+                      </label>
+                      <SearchableSelect
+                        value={form.upazila}
+                        onChange={(v) => update('upazila', v)}
+                        options={availableUpazilas}
+                        placeholder="Search upazila / thana..."
+                        emptyMessage="No upazila found"
+                      />
+                    </div>
+                  )}
+
+                  {/* Upazila — outside Chattogram (select or free-text) */}
+                  {form.area === 'outside-chattogram' && form.district && (
+                    <div>
+                      <label className="block text-xs font-semibold text-[#0F2A5C] mb-1.5">
+                        Select Upazila / Thana{' '}
+                        <span className="text-red-500">*</span>
+                      </label>
+                      {availableUpazilas.length > 0 ? (
+                        <SearchableSelect
+                          value={form.upazila}
+                          onChange={(v) => update('upazila', v)}
+                          options={availableUpazilas}
+                          placeholder="Search upazila / thana..."
+                          emptyMessage="No upazila found"
+                        />
+                      ) : (
+                        <input
+                          type="text"
+                          value={form.upazila}
+                          onChange={(e) => update('upazila', e.target.value)}
+                          placeholder="Enter your upazila / thana"
+                          className={inputClass}
+                        />
+                      )}
+                    </div>
+                  )}
+
+                  {/* Note */}
+                  <input
+                    type="text"
+                    value={form.note}
+                    onChange={(e) => update('note', e.target.value)}
+                    placeholder="Note (optional)"
+                    className={inputClass}
+                  />
                 </div>
               </section>
 
@@ -401,7 +553,6 @@ export default function CheckoutPage() {
               <section className="bg-white rounded-lg shadow-[0_2px_10px_rgba(15,42,92,0.06)] p-5">
                 <SectionHeader step={3} title="Payment" />
 
-                {/* Payment grid */}
                 <div className="grid grid-cols-3 gap-3">
                   {PAYMENT_METHODS.map((pm) => {
                     const selected = form.paymentMethod === pm.value;
@@ -419,7 +570,9 @@ export default function CheckoutPage() {
                           name="paymentMethod"
                           value={pm.value}
                           checked={selected}
-                          onChange={(e) => update('paymentMethod', e.target.value)}
+                          onChange={(e) =>
+                            update('paymentMethod', e.target.value)
+                          }
                           className="sr-only"
                         />
                         <div className="w-14 h-14 rounded-md bg-white border border-[#E3E6EB] flex items-center justify-center overflow-hidden p-1.5">
@@ -441,6 +594,67 @@ export default function CheckoutPage() {
                     );
                   })}
                 </div>
+
+                {/* Dynamic Payment Instructions */}
+                {form.paymentMethod === 'BKASH' && paymentSettings?.bkash?.enabled && (
+                  <div className="mt-4 p-4 bg-pink-50 border border-pink-200 rounded-lg space-y-2">
+                    <h3 className="text-sm font-bold text-pink-900 border-b border-pink-200 pb-2 mb-2">
+                      bKash Payment Instructions
+                    </h3>
+                    <p className="text-sm text-pink-900 flex items-center gap-2">
+                      <span className="font-semibold">Number:</span> 
+                      <span className="text-base font-bold select-all">{paymentSettings.bkash.number}</span>
+                    </p>
+                    <p className="text-sm text-pink-900">
+                      <span className="font-semibold">Type:</span> {paymentSettings.bkash.type}
+                    </p>
+                    <p className="text-sm text-pink-900">
+                      <span className="font-semibold">Action:</span> Please send money using <strong>{paymentSettings.bkash.type === 'Personal' ? 'Send Money' : 'Payment'}</strong> option.
+                    </p>
+                    <div className="bg-white/50 p-2 rounded text-xs text-pink-700 mt-2">
+                      <strong>Note:</strong> If you use "Send Money" to a Personal number, an extra cash-out charge (approx 1.85%) may be deducted by bKash. To avoid this, use a Merchant number if available, or send the exact amount.
+                    </div>
+                  </div>
+                )}
+
+                {form.paymentMethod === 'NAGAD' && paymentSettings?.nagad?.enabled && (
+                  <div className="mt-4 p-4 bg-orange-50 border border-orange-200 rounded-lg space-y-2">
+                    <h3 className="text-sm font-bold text-orange-900 border-b border-orange-200 pb-2 mb-2">
+                      Nagad Payment Instructions
+                    </h3>
+                    <p className="text-sm text-orange-900 flex items-center gap-2">
+                      <span className="font-semibold">Number:</span> 
+                      <span className="text-base font-bold select-all">{paymentSettings.nagad.number}</span>
+                    </p>
+                    <p className="text-sm text-orange-900">
+                      <span className="font-semibold">Type:</span> {paymentSettings.nagad.type}
+                    </p>
+                    <p className="text-sm text-orange-900">
+                      <span className="font-semibold">Action:</span> Please send money using <strong>{paymentSettings.nagad.type === 'Personal' ? 'Send Money' : 'Payment'}</strong> option.
+                    </p>
+                    <div className="bg-white/50 p-2 rounded text-xs text-orange-700 mt-2">
+                      <strong>Note:</strong> If you use "Send Money" to a Personal number, an extra cash-out charge may be deducted by Nagad. Please send the exact amount.
+                    </div>
+                  </div>
+                )}
+
+                {form.paymentMethod === 'ROCKET' && paymentSettings?.rocket?.enabled && (
+                  <div className="mt-4 p-4 bg-purple-50 border border-purple-200 rounded-lg space-y-2">
+                    <h3 className="text-sm font-bold text-purple-900 border-b border-purple-200 pb-2 mb-2">
+                      Rocket Payment Instructions
+                    </h3>
+                    <p className="text-sm text-purple-900 flex items-center gap-2">
+                      <span className="font-semibold">Number:</span> 
+                      <span className="text-base font-bold select-all">{paymentSettings.rocket.number}</span>
+                    </p>
+                    <p className="text-sm text-purple-900">
+                      <span className="font-semibold">Type:</span> {paymentSettings.rocket.type}
+                    </p>
+                    <p className="text-sm text-purple-900">
+                      <span className="font-semibold">Action:</span> Please send money using <strong>{paymentSettings.rocket.type === 'Personal' ? 'Send Money' : 'Payment'}</strong> option.
+                    </p>
+                  </div>
+                )}
 
                 {needsTxId && (
                   <div className="mt-4 bg-[#F1F3F6] rounded-lg p-4">
@@ -500,7 +714,6 @@ export default function CheckoutPage() {
                           key={item.variantId}
                           className="flex gap-3 text-sm pb-3 border-b border-[#F1F3F6] last:border-b-0 last:pb-0"
                         >
-                          {/* Image */}
                           <div className="w-14 h-20 bg-[#F1F3F6] rounded-md overflow-hidden flex-shrink-0">
                             {item.image ? (
                               // eslint-disable-next-line @next/next/no-img-element
@@ -516,9 +729,7 @@ export default function CheckoutPage() {
                             )}
                           </div>
 
-                          {/* Info + Qty + Remove */}
                           <div className="flex-1 min-w-0">
-                            {/* Row 1: name + remove */}
                             <div className="flex items-start justify-between gap-2">
                               <div className="flex-1 min-w-0">
                                 <div className="font-medium text-ink text-sm line-clamp-1">
@@ -538,9 +749,7 @@ export default function CheckoutPage() {
                               </button>
                             </div>
 
-                            {/* Row 2: qty stepper + price */}
                             <div className="flex items-center justify-between mt-2 gap-2">
-                              {/* Qty stepper */}
                               <div className="flex items-center border border-[#E3E6EB] rounded-lg overflow-hidden bg-white">
                                 <button
                                   type="button"
@@ -569,7 +778,6 @@ export default function CheckoutPage() {
                                 </button>
                               </div>
 
-                              {/* Price */}
                               <div className="text-right">
                                 <div className="text-[#0F2A5C] font-semibold text-sm">
                                   {tk(finalPrice * item.qty)}
@@ -587,11 +795,39 @@ export default function CheckoutPage() {
                     })}
                   </div>
 
-                  <div className="border-t border-[#E3E6EB] pt-3 flex justify-between items-baseline">
-                    <span className="text-sm text-[#5A6270]">Total</span>
-                    <span className="font-semibold text-lg text-[#0F2A5C]">
-                      {tk(subtotal)}
-                    </span>
+                  {/* Totals */}
+                  <div className="space-y-2 border-t border-[#E3E6EB] pt-3 text-sm">
+                    <div className="flex justify-between">
+                      <span className="text-[#5A6270]">Subtotal</span>
+                      <span className="text-[#0F2A5C] font-medium">
+                        {tk(subtotal)}
+                      </span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-[#5A6270]">Delivery</span>
+                      <span
+                        className={
+                          isFreeDelivery
+                            ? 'text-emerald-700 font-medium'
+                            : 'text-[#0F2A5C] font-medium'
+                        }
+                      >
+                        {isFreeDelivery ? 'FREE' : tk(deliveryCharge)}
+                      </span>
+                    </div>
+                    <div className="border-t border-[#E3E6EB] pt-2 flex justify-between items-baseline">
+                      <span className="text-sm font-semibold text-[#0F2A5C]">
+                        Total
+                      </span>
+                      <span className="font-semibold text-lg text-[#0F2A5C]">
+                        {tk(grandTotal)}
+                      </span>
+                    </div>
+                    {!isFreeDelivery && subtotal > 0 && (
+                      <div className="text-[10px] text-[#8A8F98] text-right">
+                        Free delivery over {tk(FREE_DELIVERY_THRESHOLD)}
+                      </div>
+                    )}
                   </div>
 
                   {/* Stock Issues */}
@@ -640,7 +876,7 @@ export default function CheckoutPage() {
                       ? 'Checking stock...'
                       : stockIssues.length > 0
                       ? '⚠ Out of Stock'
-                      : 'Place Order'}
+                      : `Place Order · ${tk(grandTotal)}`}
                   </button>
 
                   <button
@@ -648,13 +884,41 @@ export default function CheckoutPage() {
                     onClick={handleCancel}
                     className="block w-full text-center text-xs text-[#8A8F98] hover:text-[#0F2A5C] mt-3"
                   >
-                    ← Cancel & Back to Cart
+                    ← Cancel &amp; Back to Cart
                   </button>
                 </div>
               </div>
             </div>
           </div>
         </form>
+
+        {/* Related Products Section */}
+        {relatedProducts.length > 0 && (
+          <div className="mt-12 pt-8 border-t border-[#E8EBF0]">
+            <h3 className="font-serif text-xl font-semibold text-[#0F2A5C] mb-6 text-center">
+              You might also like
+            </h3>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+              {relatedProducts.map((p: any) => (
+                <div key={p.id} className="cursor-pointer group" onClick={() => window.location.href = `/product/${p.slug}`}>
+                  <div className="aspect-[3/4] bg-[#F1F3F6] rounded-lg overflow-hidden mb-2">
+                    {p.productImages?.[0]?.url ? (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img src={p.productImages[0].url} alt={p.name} className="w-full h-full object-cover group-hover:scale-105 transition" />
+                    ) : p.images?.[0] ? (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img src={p.images[0]} alt={p.name} className="w-full h-full object-cover group-hover:scale-105 transition" />
+                    ) : (
+                      <div className="w-full h-full flex items-center justify-center text-xs text-gray-400">No Image</div>
+                    )}
+                  </div>
+                  <div className="text-sm font-medium text-[#0F2A5C] truncate">{p.name}</div>
+                  <div className="text-sm font-bold text-wine mt-1">৳{Number(p.price).toLocaleString()}</div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );

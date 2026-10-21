@@ -2,6 +2,7 @@
 
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
+import { useRouter } from 'next/navigation'; // 🎯 STEP 3
 import { api, ApiError } from '@/lib/api';
 import { getToken } from '@/lib/auth';
 import { tk, formatDateTime } from '@/lib/format';
@@ -152,6 +153,10 @@ export default function AdminDashboard() {
   const [data, setData] = useState<DashboardData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  
+  // 🎯 STEP 3: Notification State
+  const router = useRouter();
+  const [showNotifications, setShowNotifications] = useState(false);
 
   async function load() {
     try {
@@ -214,7 +219,84 @@ export default function AdminDashboard() {
             Overview of today&apos;s performance
           </p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
+          {/* 🎯 Analytics Button */}
+          <Link
+            href="/admin/dashboard/analytics"
+            className="px-3.5 py-2 rounded-lg text-xs font-semibold bg-white border border-[#E8EBF0] text-[#0F2A5C] hover:bg-[#F1F3F6] transition min-h-[40px] flex items-center gap-1"
+          >
+            📊 Analytics
+          </Link>
+
+          {/* 🔔 STEP 2: Notification Bell */}
+          <div className="relative">
+            <button
+              onClick={() => setShowNotifications((v) => !v)}
+              className="relative px-3.5 py-2 rounded-lg text-xs font-semibold bg-white border border-[#E8EBF0] text-[#0F2A5C] hover:bg-[#F1F3F6] transition min-h-[40px] flex items-center"
+              title="Notifications"
+            >
+              🔔
+              {(k?.waitingConfirmation ?? 0) > 0 && (
+                <span className="absolute -top-1 -right-1 w-5 h-5 rounded-full bg-red-500 text-white text-[10px] font-bold flex items-center justify-center">
+                  {k?.waitingConfirmation}
+                </span>
+              )}
+            </button>
+
+            {showNotifications && (
+              <div className="absolute right-0 top-full mt-2 w-80 bg-white rounded-xl shadow-xl border border-[#E8EBF0] z-50 overflow-hidden">
+                <div className="px-4 py-3 border-b border-[#E8EBF0] flex items-center justify-between bg-[#F7F8FA]">
+                  <div className="font-bold text-sm text-[#0F2A5C]">
+                    Notifications
+                  </div>
+                  <button
+                    onClick={() => setShowNotifications(false)}
+                    className="text-gray-400 hover:text-red-500 text-xs"
+                  >
+                    ✕
+                  </button>
+                </div>
+                <div className="max-h-96 overflow-y-auto">
+                  {(k?.waitingConfirmation ?? 0) === 0 ? (
+                    <div className="p-6 text-center text-sm text-gray-500">
+                      ✅ No new notifications
+                    </div>
+                  ) : (
+                    <button
+                      onClick={() => {
+                        setShowNotifications(false);
+                        router.push('/admin/orders?status=PLACED');
+                      }}
+                      className="w-full text-left px-4 py-3 hover:bg-[#F7F8FA] transition border-b border-[#F1F3F6]"
+                    >
+                      <div className="flex items-start gap-3">
+                        <div className="text-2xl">⏰</div>
+                        <div className="flex-1">
+                          <div className="text-sm font-semibold text-[#0F2A5C]">
+                            {k?.waitingConfirmation} order
+                            {(k?.waitingConfirmation ?? 0) !== 1 ? 's' : ''} waiting confirmation
+                          </div>
+                          <div className="text-xs text-gray-500 mt-0.5">
+                            Click to view and confirm
+                          </div>
+                        </div>
+                      </div>
+                    </button>
+                  )}
+                </div>
+                <div className="px-4 py-3 border-t border-[#E8EBF0] text-center">
+                  <Link
+                    href="/admin/orders"
+                    onClick={() => setShowNotifications(false)}
+                    className="text-xs text-[#0F2A5C] font-semibold hover:underline"
+                  >
+                    View All Orders →
+                  </Link>
+                </div>
+              </div>
+            )}
+          </div>
+
           <button
             onClick={load}
             className="px-3.5 py-2 rounded-lg text-xs font-semibold bg-white border border-[#E8EBF0] text-[#0F2A5C] hover:bg-[#F1F3F6] transition min-h-[40px]"

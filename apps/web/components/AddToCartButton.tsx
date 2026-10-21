@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { addToCart, setBuyNow } from '@/lib/cart';
 import { WishlistButton } from './WishlistButton';
@@ -27,30 +27,48 @@ interface Props {
   onColorChange?: (color: string) => void;
 }
 
+type ModalType = 'success' | 'error' | null;
+
 export function AddToCartButton({
   product,
   externalColor,
   onColorChange,
 }: Props) {
   const router = useRouter();
+
+  // ── Color ─────────────────────────────────────
   const [internalColor, setInternalColor] = useState<string>(
     product.variants[0]?.color || ''
   );
-
   const selectedColor = externalColor ?? internalColor;
 
   function handleColorChange(color: string) {
-    if (onColorChange) {
-      onColorChange(color);
-    } else {
-      setInternalColor(color);
-    }
+    if (onColorChange) onColorChange(color);
+    else setInternalColor(color);
   }
 
+  // ── Size, Qty ─────────────────────────────────
   const [selectedSize, setSelectedSize] = useState<string>('');
-  const [added, setAdded] = useState(false);
-  const [error, setError] = useState('');
+  const [qty, setQty] = useState<number>(1);
 
+  // ── Modal ─────────────────────────────────────
+  const [modal, setModal] = useState<{ type: ModalType; message: string }>({
+    type: null,
+    message: '',
+  });
+
+  // Auto-close modal after 2.2s
+  useEffect(() => {
+    if (!modal.type) return;
+    const t = setTimeout(() => setModal({ type: null, message: '' }), 2200);
+    return () => clearTimeout(t);
+  }, [modal.type, modal.message]);
+
+  function closeModal() {
+    setModal({ type: null, message: '' });
+  }
+
+  // ── Derived ───────────────────────────────────
   const colors = [...new Set(product.variants.map((v) => v.color))];
   const sizes = [
     ...new Set(
@@ -67,31 +85,39 @@ export function AddToCartButton({
   const totalStock = product.variants.reduce((s, v) => s + v.qty, 0);
   const outOfStock = totalStock === 0;
 
+  const availableQty = selectedVariant
+    ? Math.max(0, selectedVariant.qty - selectedVariant.reserved)
+    : 0;
+
+  // ── Validate ──────────────────────────────────
   function validate(): boolean {
-    setError('');
-
     if (!selectedSize) {
-      setError('Please select a size');
+      setModal({ type: 'error', message: 'Please Select A Size!' });
       return false;
     }
-
     if (!selectedVariant) {
-      setError('This variant is not available');
+      setModal({
+        type: 'error',
+        message: 'This size is not available for the selected colour.',
+      });
       return false;
     }
-
-    const available = selectedVariant.qty - selectedVariant.reserved;
-    if (available <= 0) {
-      setError('This variant is out of stock');
+    if (availableQty <= 0) {
+      setModal({ type: 'error', message: 'This variant is out of stock.' });
       return false;
     }
-
+    if (qty > availableQty) {
+      setModal({
+        type: 'error',
+        message: `Only ${availableQty} left in stock.`,
+      });
+      return false;
+    }
     return true;
   }
 
   function buildCartItem() {
     if (!selectedVariant) return null;
-    const available = selectedVariant.qty - selectedVariant.reserved;
     return {
       productId: product.id,
       variantId: selectedVariant.id,
@@ -99,183 +125,302 @@ export function AddToCartButton({
       slug: product.slug,
       image: product.images?.[0] || null,
       price: Number(product.price),
-      discount: product.discount,
+      discount: Number(product.discount) || 0,
       size: selectedVariant.size,
       color: selectedVariant.color,
-      maxQty: available, // ← available, not total qty
+      maxQty: availableQty,
     };
   }
 
+  // ── Actions ───────────────────────────────────
   function handleAdd() {
     if (!validate()) return;
-
     const item = buildCartItem();
     if (!item) return;
 
-    addToCart(item);
-    setAdded(true);
-    setTimeout(() => setAdded(false), 2000);
+    addToCart(item, qty);
+    setModal({
+      type: 'success',
+      message: 'Product added to cart successfully!',
+    });
   }
 
   function handleBuyNow() {
     if (!validate()) return;
-
     const item = buildCartItem();
     if (!item) return;
 
-    // Set this item as the ONLY item for checkout.
-    // Previous cart is backed up and can be restored via
-    // restoreCartFromBackup() from the checkout page.
-    setBuyNow([{ ...item, qty: 1 }]);
-
+    setBuyNow([{ ...item, qty }]);
     router.push('/checkout');
   }
 
-  const finalPrice =
-    product.discount > 0
-      ? Math.round(Number(product.price) * (1 - product.discount / 100))
-      : Number(product.price);
-
+  // ── Render ────────────────────────────────────
   return (
-    <div>
-      {/* Color picker */}
+    <div className="space-y-3">
+      {/* Colour */}
       {colors.length > 0 && (
-        <div className="mb-5">
-          <div className="text-sm font-medium mb-2">
-            Color: <span className="text-muted">{selectedColor}</span>
+        <div>
+          <div className="text-xs font-semibold text-ink mb-2">
+            Color: <span className="text-wine font-bold">{selectedColor}</span>
           </div>
-          <div className="flex gap-2 flex-wrap">
-            {colors.map((color) => (
+          <div className="flex flex-wrap gap-2">
+            {colors.map((c) => (
               <button
-                key={color}
+                key={c}
                 type="button"
                 onClick={() => {
-                  handleColorChange(color);
-                  setSelectedSize('');
+                  handleColorChange(c);
+                  setSelectedSize(''); // reset size on colour change
                 }}
-                className={`px-3 py-1.5 border rounded text-sm transition ${
-                  selectedColor === color
-                    ? 'border-wine bg-wine text-white'
-                    : 'border-line hover:border-wine'
+                className={`px-3 py-1.5 rounded-lg text-xs font-medium border transition ${
+                  selectedColor === c
+                    ? 'bg-wine text-white border-wine'
+                    : 'bg-white border-line text-ink hover:border-wine'
                 }`}
               >
-                {color}
+                {c}
               </button>
             ))}
           </div>
         </div>
       )}
 
-      {/* Size picker — only show available sizes */}
-      {sizes.length > 0 && (
-        <div className="mb-6">
-          <div className="text-sm font-medium mb-2">Size</div>
-          <div className="flex gap-2 flex-wrap">
-            {sizes.map((size) => {
-              const variant = product.variants.find(
-                (v) => v.color === selectedColor && v.size === size
-              );
-              const available = variant ? variant.qty - variant.reserved : 0;
-              const disabled = !variant || available <= 0;
-              // Show disabled (strikethrough) if we want visible hint
-              // OR hide if stock ends
-              if (disabled) {
-                // Option A: Hide
-                return null;
-
-                // Option B: Show with strikethrough (current)
-                // return (...);
-              }
-              return (
-                <button
-                  key={size}
-                  type="button"
-                  onClick={() => setSelectedSize(size)}
-                  className={`px-4 py-2 border rounded text-sm transition ${
-                    selectedSize === size
-                      ? 'border-wine bg-wine text-white'
-                      : 'border-line hover:border-wine'
-                  }`}
-                >
-                  {size}
-                </button>
-              );
-            })}
-          </div>
-
-          {/* If no sizes available for this color */}
-          {sizes.every((size) => {
-            const variant = product.variants.find(
-              (v) => v.color === selectedColor && v.size === size
-            );
-            const available = variant ? variant.qty - variant.reserved : 0;
-            return available <= 0;
-          }) && (
-            <div className="text-xs text-amber-600 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 mt-2">
-              ⚠ All sizes of {selectedColor} are out of stock
-            </div>
+      {/* Size */}
+      <div>
+        <div className="text-xs font-semibold text-ink mb-2">
+          Size:
+          {selectedSize && (
+            <span className="text-wine font-bold ml-1">{selectedSize}</span>
           )}
         </div>
-      )}
+        <div className="flex flex-wrap gap-2">
+          {sizes.map((s) => (
+            <button
+              key={s}
+              type="button"
+              onClick={() => setSelectedSize(s)}
+              className={`min-w-[56px] px-3 py-2 rounded-lg text-xs font-semibold border transition ${
+                selectedSize === s
+                  ? 'bg-wine text-white border-wine'
+                  : 'bg-white border-line text-ink hover:border-wine'
+              }`}
+            >
+              {s}
+            </button>
+          ))}
+          {sizes.length === 0 && (
+            <span className="text-xs text-muted">No sizes available</span>
+          )}
+        </div>
+      </div>
 
-      {/* Stock info */}
-      <div className="text-sm mb-6">
-        {outOfStock ? (
-          <span className="text-wine">✗ Stock out</span>
-        ) : selectedVariant ? (
-          <span className="text-leaf">
-            ✓ In stock ({selectedVariant.qty - selectedVariant.reserved}{' '}
-            available)
-          </span>
-        ) : (
-          <span className="text-muted">
-            ✓ In stock ({totalStock} total)
-          </span>
+      {/* Qty */}
+      <div>
+        <div className="text-xs font-semibold text-ink mb-2">Quantity:</div>
+        <div className="inline-flex items-center rounded-lg border border-line">
+          <button
+            type="button"
+            onClick={() => setQty((q) => Math.max(1, q - 1))}
+            className="w-9 h-9 flex items-center justify-center text-ink hover:bg-[#F1F3F6] transition"
+            aria-label="Decrease"
+          >
+            −
+          </button>
+          <span className="w-12 text-center text-sm font-semibold">{qty}</span>
+          <button
+            type="button"
+            onClick={() => setQty((q) => Math.min(availableQty || 99, q + 1))}
+            className="w-9 h-9 flex items-center justify-center text-ink hover:bg-[#F1F3F6] transition"
+            aria-label="Increase"
+          >
+            +
+          </button>
+        </div>
+        {selectedSize && availableQty > 0 && (
+          <div className="text-[10px] text-emerald-700 mt-1">
+            ✓ {availableQty} available
+          </div>
         )}
-        {product.variants.length > 0 && (
-          <span className="ml-4 text-muted">• Try Room available</span>
+        {selectedSize && availableQty === 0 && (
+          <div className="text-[10px] text-red-600 mt-1">
+            ✗ Out of stock for this variant
+          </div>
         )}
       </div>
 
-      {/* Error */}
-      {error && (
-        <div className="text-sm text-wine bg-wine/10 border border-wine/20 rounded px-3 py-2 mb-4">
-          {error}
-        </div>
-      )}
-
-      {/* Buttons */}
-      <div className="space-y-3 mb-6">
-        {/* Primary row: Add to Cart + Wishlist */}
-        <div className="flex gap-3">
-          <button
-            type="button"
-            onClick={handleAdd}
-            disabled={outOfStock}
-            className="flex-1 justify-center rounded-full py-3.5 font-semibold text-sm border-2 border-wine text-wine bg-white hover:bg-wine hover:text-white transition disabled:opacity-50 disabled:cursor-not-allowed"
+      {/* Add to Cart + Wishlist */}
+      <div className="flex items-stretch gap-2">
+        <button
+          type="button"
+          onClick={handleAdd}
+          disabled={outOfStock}
+          className="flex-1 border-2 border-wine text-wine hover:bg-wine hover:text-white py-3.5 rounded-lg text-sm font-bold transition disabled:opacity-50 flex items-center justify-center gap-2"
+        >
+          <svg
+            width="18"
+            height="18"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
           >
-            {added ? '✓ Added to Cart!' : 'Add to Cart'}
-          </button>
+            <circle cx="9" cy="20" r="1.5" />
+            <circle cx="18" cy="20" r="1.5" />
+            <path d="M2 3h3l2.5 13.5a1.5 1.5 0 0 0 1.5 1.2h9.5a1.5 1.5 0 0 0 1.5-1.2L22 7H6" />
+          </svg>
+          Add to Cart
+        </button>
+        <div className="flex items-center justify-center px-3 border-2 border-line rounded-lg hover:border-wine transition">
           <WishlistButton
             productId={product.id}
             productSlug={product.slug}
             productName={product.name}
-            productPrice={finalPrice}
+            productPrice={Number(product.price)}
             productImage={product.images?.[0]}
-            variant="icon"
           />
         </div>
-
-        {/* Buy Now button */}
-        <button
-          type="button"
-          onClick={handleBuyNow}
-          disabled={outOfStock}
-          className="w-full bg-wine hover:bg-wine-dark text-white rounded-full py-3.5 font-semibold text-sm transition disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
-        >
-          ⚡ Buy Now
-        </button>
       </div>
+
+      {/* Buy Now */}
+      <button
+        type="button"
+        onClick={handleBuyNow}
+        disabled={outOfStock}
+        className="w-full bg-wine hover:bg-[#0A1F45] text-white py-3.5 rounded-lg text-sm font-bold transition-all duration-200 disabled:opacity-50 flex items-center justify-center gap-2 shadow-[0_4px_14px_rgba(128,0,32,0.35)] hover:shadow-[0_6px_20px_rgba(128,0,32,0.45)] active:scale-[0.98]"
+      >
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+          <path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z" />
+        </svg>
+        Buy Now
+      </button>
+
+      {/* ── Modal Popup ─────────────────────────────── */}
+      {modal.type && (
+        <div
+          onClick={closeModal}
+          style={{
+            position: 'fixed',
+            inset: 0,
+            zIndex: 100,
+            background: 'rgba(0,0,0,0.45)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: '16px',
+            animation: 'modalFadeIn 0.2s ease-out',
+          }}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              background: '#fff',
+              borderRadius: '12px',
+              padding: '32px 28px',
+              maxWidth: '360px',
+              width: '100%',
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              gap: '16px',
+              boxShadow: '0 20px 60px rgba(0,0,0,0.25)',
+              animation: 'modalPopIn 0.25s cubic-bezier(0.34, 1.56, 0.64, 1)',
+            }}
+          >
+            {/* Icon */}
+            {modal.type === 'success' ? (
+              <div
+                style={{
+                  width: 64,
+                  height: 64,
+                  borderRadius: '50%',
+                  background: '#F0FDF4',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                }}
+              >
+                <svg
+                  width="34"
+                  height="34"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="#16A34A"
+                  strokeWidth="2.5"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                >
+                  <polyline points="20 6 9 17 4 12" />
+                </svg>
+              </div>
+            ) : (
+              <div
+                style={{
+                  width: 64,
+                  height: 64,
+                  borderRadius: '50%',
+                  background: '#FEF2F2',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                }}
+              >
+                <svg
+                  width="34"
+                  height="34"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="#DC2626"
+                  strokeWidth="2.5"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                >
+                  <circle cx="12" cy="12" r="10" />
+                  <line x1="15" y1="9" x2="9" y2="15" />
+                  <line x1="9" y1="9" x2="15" y2="15" />
+                </svg>
+              </div>
+            )}
+
+            {/* Message */}
+            <p
+              style={{
+                textAlign: 'center',
+                fontSize: 15,
+                fontWeight: 600,
+                color: '#1A1A1A',
+                margin: 0,
+                lineHeight: 1.4,
+              }}
+            >
+              {modal.message}
+            </p>
+          </div>
+        </div>
+      )}
+
+      {/* Keyframes (inline style tag) */}
+      <style jsx global>{`
+        @keyframes modalFadeIn {
+          from {
+            opacity: 0;
+          }
+          to {
+            opacity: 1;
+          }
+        }
+        @keyframes modalPopIn {
+          0% {
+            transform: scale(0.85);
+            opacity: 0;
+          }
+          100% {
+            transform: scale(1);
+            opacity: 1;
+          }
+        }
+      `}</style>
     </div>
   );
 }

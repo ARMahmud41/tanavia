@@ -100,8 +100,8 @@ export default function AdminOrdersPage() {
 
   return (
     <div className="p-8 bg-[#F7F8FA] min-h-screen">
-      {/* Header */}
-      <div className="flex items-start justify-between mb-6">
+      {/* Header with Manual Order Button */}
+      <div className="flex items-start justify-between mb-6 flex-wrap gap-3">
         <div>
           <h1 className="font-serif text-3xl font-semibold text-[#0F2A5C] mb-1">
             Orders
@@ -110,11 +110,16 @@ export default function AdminOrdersPage() {
             {pagination?.total ?? 0} orders total
           </p>
         </div>
+        <Link
+          href="/admin/orders/manual"
+          className="bg-[#0F2A5C] hover:bg-[#0A1F45] text-white px-4 py-2.5 rounded-lg text-sm font-semibold transition flex items-center gap-2 shadow-sm"
+        >
+          <span className="text-lg leading-none">+</span> Create Manual Order
+        </Link>
       </div>
 
       {/* Filters bar */}
       <div className="bg-white rounded-lg shadow-[0_2px_10px_rgba(15,42,92,0.06)] p-4 mb-5 flex flex-col md:flex-row md:items-center gap-3">
-        {/* Status pills */}
         <div className="flex flex-wrap gap-2 flex-1">
           {STATUSES.map((s) => (
             <button
@@ -134,7 +139,6 @@ export default function AdminOrdersPage() {
           ))}
         </div>
 
-        {/* Search */}
         <form onSubmit={handleSearch} className="flex gap-2">
           <input
             type="text"
@@ -152,14 +156,12 @@ export default function AdminOrdersPage() {
         </form>
       </div>
 
-      {/* Error */}
       {error && (
         <div className="mb-5 bg-red-50 border border-red-200 text-red-700 text-sm rounded-lg px-4 py-3">
           {error}
         </div>
       )}
 
-      {/* Table */}
       <div className="bg-white rounded-lg shadow-[0_2px_10px_rgba(15,42,92,0.06)] overflow-hidden">
         {loading ? (
           <div className="p-16 text-center text-[#8A8F98] text-sm">
@@ -170,7 +172,7 @@ export default function AdminOrdersPage() {
             <div className="text-4xl mb-3">📦</div>
             <p className="text-[#5A6270] mb-2">No orders found</p>
             <p className="text-sm text-[#8A8F98]">
-              Customer order place করলে এখানে দেখাবে
+              Click &ldquo;+ Create Manual Order&rdquo; to add one
             </p>
           </div>
         ) : (
@@ -259,7 +261,6 @@ export default function AdminOrdersPage() {
         )}
       </div>
 
-      {/* Pagination */}
       {pagination && pagination.totalPages > 1 && (
         <div className="flex items-center justify-between mt-5">
           <div className="text-sm text-[#8A8F98]">

@@ -135,6 +135,7 @@ export class AuthService {
         email: user.email,
         phone: user.phone,
         role: user.role,
+        target: user.target, // 🎯 Added target field
       },
       ...tokens,
     };
@@ -191,6 +192,7 @@ export class AuthService {
         name: session.user.name,
         email: session.user.email,
         role: session.user.role,
+        target: session.user.target, // 🎯 Added target field
       },
     };
   }
@@ -219,6 +221,7 @@ export class AuthService {
         email: true,
         phone: true,
         role: true,
+        target: true, // 🎯 Added target field
         emailVerified: true,
         phoneVerified: true,
         twoFactorOn: true,

@@ -72,14 +72,14 @@ const DEFAULT_CONTENT: SiteContent = {
     instagram: 'https://instagram.com/tanavia',
     youtube: 'https://youtube.com/@tanavia',
     tiktok: 'https://tiktok.com/@tanavia',
-    whatsapp: '+8801700000000',
+    whatsapp: '+8801880659448',
     x: 'https://x.com/tanavia',
     pinterest: 'https://pinterest.com/tanavia',
   },
   contact: {
-    phone: '+880 9612-345678',
-    email: 'hello@tanavia.com',
-    address: 'Dhaka, Bangladesh',
+    phone: '+8801880659448',
+    email: 'tanaviabd1.com',
+    address: 'chattogram, Bangladesh',
   },
   announcements: [
     '🚚 Free delivery over ৳5,000',
@@ -225,7 +225,7 @@ TANAVIA takes fraud protection seriously. We and our payment partners continuous
 We reserve the right to change or update these Terms and policies at any time by posting a notice on our site. Such changes are effective immediately upon posting. It is your responsibility to review these Terms periodically. Your continued use of the website after changes are posted constitutes acceptance of the updated Terms.
 
 Last updated: October 2026
-Questions? Contact us at hello@tanavia.com or WhatsApp +880 9612-345678.`,
+Questions? Contact us at hello@tanavia.com or WhatsApp +880 1880-659448.`,
     },
   },
 };

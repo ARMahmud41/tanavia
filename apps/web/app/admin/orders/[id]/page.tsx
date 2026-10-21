@@ -160,7 +160,8 @@ export default function AdminOrderDetailPage() {
     setUpdating(true);
     try {
       const token = getToken() || undefined;
-      await api.patch(`/api/orders/${order.id}/mark-paid`, {}, { token });
+      // ✅ FIXED: Use /payment instead of /mark-paid
+      await api.patch(`/api/orders/${order.id}/payment`, {}, { token });
       await load();
     } catch (err) {
       alert(err instanceof Error ? err.message : 'Update failed');
@@ -256,8 +257,8 @@ export default function AdminOrderDetailPage() {
 
           {/* Action buttons */}
           <div className="flex flex-wrap gap-2">
-            {/* Print Shipping Label — show for ONLINE orders not cancelled */}
-            {!isCancelled && order.channel === 'ONLINE' && (
+            {/* Print Label — show for ONLINE and OFFLINE orders */}
+            {!isCancelled && (
               <button
                 onClick={() => setShowShippingLabel(true)}
                 className="bg-[#F1F3F6] hover:bg-[#E3E6EB] text-[#0F2A5C] px-4 py-2 rounded-lg text-sm font-semibold transition"
@@ -314,7 +315,6 @@ export default function AdminOrderDetailPage() {
                     key={item.id}
                     className="flex gap-3 pb-3 border-b border-[#F1F3F6] last:border-b-0 last:pb-0"
                   >
-                    {/* Image — clickable */}
                     <button
                       type="button"
                       onClick={() => {
@@ -525,9 +525,7 @@ export default function AdminOrderDetailPage() {
         </div>
       </div>
 
-      {/* ============================== */}
-      {/* Shipping Label Modal          */}
-      {/* ============================== */}
+      {/* Shipping Label Modal */}
       {showShippingLabel && (
         <ShippingLabelModal
           order={order}
@@ -535,9 +533,7 @@ export default function AdminOrderDetailPage() {
         />
       )}
 
-      {/* ============================== */}
-      {/* Image Preview Modal           */}
-      {/* ============================== */}
+      {/* Image Preview Modal */}
       {previewImage && (
         <div
           className="fixed inset-0 bg-black/85 flex items-center justify-center p-4 z-50 cursor-zoom-out"
@@ -567,9 +563,7 @@ export default function AdminOrderDetailPage() {
         </div>
       )}
 
-      {/* ============================== */}
-      {/* Cancel Modal                    */}
-      {/* ============================== */}
+      {/* Cancel Modal */}
       {showCancel && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
           <div className="bg-white rounded-lg p-6 max-w-md w-full">
@@ -628,7 +622,6 @@ function ShippingLabelModal({
     window.print();
   }
 
-  // Parse items — some APIs may return items already structured
   const items = (order.items || []).map((it) => ({
     name: it.name,
     size: it.size,

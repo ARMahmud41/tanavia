@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, Suspense } from 'react';
 import { useRouter, useSearchParams, usePathname } from 'next/navigation';
 import { api, ApiError } from '@/lib/api';
 import { getToken, getCurrentUser } from '@/lib/auth';
@@ -112,7 +112,7 @@ const CHANNEL_COLORS: Record<string, string> = {
 // ============================================
 // Page
 // ============================================
-export default function ReturnsPage() {
+function ReturnsPageContent() {
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
@@ -901,5 +901,19 @@ function StatCard({
         </div>
       </div>
     </div>
+  );
+}
+
+export default function ReturnsPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="p-16 text-center text-sm text-muted">
+          Loading...
+        </div>
+      }
+    >
+      <ReturnsPageContent />
+    </Suspense>
   );
 }

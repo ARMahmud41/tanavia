@@ -10,6 +10,7 @@ export interface User {
   email: string;
   phone?: string | null;
   role: 'CUSTOMER' | 'STAFF' | 'ADMIN';
+  target?: number; // 🎯 এই লাইনটি যোগ করুন
 }
 
 interface AuthResponse {

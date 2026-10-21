@@ -1,5 +1,5 @@
 import type { FastifyInstance } from 'fastify';
-import { CourierService } from '../../services/courier.service.js';
+import { CourierBookingService } from '../../services/courier-booking.service.js';
 
 export async function steadfastWebhook(app: FastifyInstance) {
   app.post('/steadfast', async (req, reply) => {
@@ -14,7 +14,7 @@ export async function steadfastWebhook(app: FastifyInstance) {
     }
 
     // TODO: verify signature in production
-    const result = await CourierService.updateStatusFromWebhook(
+    const result = await CourierBookingService.handleWebhookStatus(
       body.consignment_id,
       body.status,
       body.note,

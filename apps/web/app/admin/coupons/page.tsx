@@ -79,7 +79,7 @@ export default function AdminCouponsPage() {
     if (!c.active) return 'bg-gray-100 text-gray-600 border-gray-300';
     if (c.expiresAt && new Date(c.expiresAt) < new Date())
       return 'bg-red-50 text-red-700 border-red-200';
-    if (c.usageLimit !== null && c.usedCount >= c.usageLimit)
+    if (c.usageLimit != null && c.usedCount >= c.usageLimit)
       return 'bg-amber-50 text-amber-700 border-amber-200';
     return 'bg-emerald-50 text-emerald-700 border-emerald-200';
   }
@@ -87,7 +87,7 @@ export default function AdminCouponsPage() {
   function statusLabel(c: Coupon): string {
     if (!c.active) return 'Inactive';
     if (c.expiresAt && new Date(c.expiresAt) < new Date()) return 'Expired';
-    if (c.usageLimit !== null && c.usedCount >= c.usageLimit)
+    if (c.usageLimit != null && c.usedCount >= c.usageLimit)
       return 'Exhausted';
     return 'Active';
   }
@@ -240,14 +240,17 @@ export default function AdminCouponsPage() {
                       <td className="px-4 py-3 text-center">
                         <span className="text-xs font-medium">
                           {c.usedCount}
-                          {c.usageLimit !== null ? ` / ${c.usageLimit}` : ''}
+                          {c.usageLimit != null ? ` / ${c.usageLimit}` : ''}
                         </span>
-                        {c.usageLimit !== null && (
+                        {c.usageLimit != null && (
                           <div className="mt-1 h-1 rounded-full bg-[#F1F3F6] overflow-hidden">
                             <div
                               className="h-full bg-[#0F2A5C] rounded-full"
                               style={{
-                                width: `${Math.min(100, (c.usedCount / c.usageLimit) * 100)}%`,
+                                width: `${Math.min(
+                                  100,
+                                  (c.usedCount / (c.usageLimit || 1)) * 100
+                                )}%`,
                               }}
                             />
                           </div>
@@ -312,7 +315,7 @@ export default function AdminCouponsPage() {
                     </div>
                     <div className="text-sm font-semibold text-[#0F2A5C]">
                       {c.usedCount}
-                      {c.usageLimit !== null ? ` / ${c.usageLimit}` : ''}
+                      {c.usageLimit != null ? ` / ${c.usageLimit}` : ''}
                     </div>
                   </div>
                   <div>

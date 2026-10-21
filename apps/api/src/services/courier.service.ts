@@ -125,9 +125,9 @@ export class CourierService {
     if (filters.search) {
       const q = filters.search.trim();
       where.OR = [
-        { name: { contains: q, mode: 'insensitive' } },
-        { slug: { contains: q, mode: 'insensitive' } },
-        { phone: { contains: q, mode: 'insensitive' } },
+        { name: { contains: q, } },
+        { slug: { contains: q, } },
+        { phone: { contains: q, } },
       ];
     }
 

@@ -28,7 +28,6 @@ const NAV_ITEMS = [
   { href: '/admin/reviews', label: 'Reviews', icon: '⭐' },
   { href: '/admin/payments', label: 'Payments', icon: '💳' },
  { href: '/admin/payments/settings', label: 'Payment settings', icon: '⚙️' },
-  { href: '/admin/drops', label: 'Drops', icon: '✨' },
 ];
 
 export default function AdminLayout({

@@ -73,7 +73,7 @@ export function CourierBookingCard({ order, onRefresh, onPrintLabel }: Props) {
         const def = (res.data || []).find((c) => c.isDefault);
         if (def) setSelectedCourierId(def.id);
         else if ((res.data || []).length === 1)
-          setSelectedCourierId(res.data[0].id);
+          setSelectedCourierId(res.data?.[0]?.id ?? '');
       } catch {
         // silent
       }

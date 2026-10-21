@@ -8,15 +8,35 @@ export interface CartItem {
   name: string;
   slug: string;
   image?: string | null;
-  price: number;        // original price
-  discount: number;     // %
+
+  /**
+   * BASE (pre-discount) price.
+   * Final price = price × (1 − discount / 100)
+   */
+  price: number;
+
+  /**
+   * Legacy alias — kept for backward compatibility.
+   * Same as `price` (base price).
+   */
+  originalPrice?: number;
+
+  /** Discount percentage — 0 to 100 */
+  discount: number;
+
   size: string;
   color: string;
   qty: number;
-  maxQty: number;       // variant stock
+
+  /** Max quantity = variant stock at add-time */
+  maxQty: number;
 }
 
 const CART_KEY = 'tanavia_cart';
+
+// ============================================
+// Read / write primitives
+// ============================================
 
 export function getCart(): CartItem[] {
   if (typeof window === 'undefined') return [];
@@ -34,16 +54,29 @@ export function setCart(items: CartItem[]): void {
   if (typeof window === 'undefined') return;
   localStorage.setItem(CART_KEY, JSON.stringify(items));
   window.dispatchEvent(new Event('cart-updated'));
+  window.dispatchEvent(new Event('cart-change'));
 }
 
-export function addToCart(item: Omit<CartItem, 'qty'>, qty = 1): CartItem[] {
+// ============================================
+// Mutations
+// ============================================
+
+export function addToCart(
+  item: Omit<CartItem, 'qty'> & { qty?: number },
+  qty = 1
+): CartItem[] {
+  const addQty = item.qty ?? qty;
   const cart = getCart();
   const existing = cart.find((i) => i.variantId === item.variantId);
 
   if (existing) {
-    existing.qty = Math.min(existing.qty + qty, existing.maxQty);
+    existing.qty = Math.min(existing.qty + addQty, existing.maxQty);
   } else {
-    cart.push({ ...item, qty: Math.min(qty, item.maxQty) });
+    const { qty: _ignored, ...rest } = item;
+    cart.push({
+      ...rest,
+      qty: Math.min(addQty, item.maxQty),
+    } as CartItem);
   }
 
   setCart(cart);
@@ -76,73 +109,74 @@ export function clearCart(): void {
 
 export function cartCount(items?: CartItem[]): number {
   const cart = items || getCart();
-  return cart.reduce((s, i) => s + i.qty, 0);
+  return cart.reduce((s, i) => s + (Number(i.qty) || 0), 0);
 }
 
 export function cartSubtotal(items?: CartItem[]): number {
   const cart = items || getCart();
   return cart.reduce((sum, item) => {
-    const finalPrice = Math.round(item.price * (1 - item.discount / 100));
-    return sum + finalPrice * item.qty;
+    const base = Number(item.price) || 0;
+    const disc = Number(item.discount) || 0;
+    const finalPrice = Math.round(base * (1 - disc / 100));
+    const qty = Number(item.qty) || 0;
+    return sum + finalPrice * qty;
   }, 0);
 }
 
-export function cartTotal(items?: CartItem[]): number {
-  return cartSubtotal(items); // no tax/shipping yet
+export function cartOriginalSubtotal(items?: CartItem[]): number {
+  const cart = items || getCart();
+  return cart.reduce((sum, item) => {
+    const base = Number(item.price) || 0;
+    const qty = Number(item.qty) || 0;
+    return sum + base * qty;
+  }, 0);
 }
+
+export function cartSavings(items?: CartItem[]): number {
+  const original = cartOriginalSubtotal(items);
+  const final = cartSubtotal(items);
+  return Math.max(0, original - final);
+}
+
+export function cartTotal(items?: CartItem[]): number {
+  return cartSubtotal(items);
+}
+
 // ============================================
-// Buy Now — direct checkout (separate flow)
+// Buy Now — direct checkout
 // ============================================
 
-const BUY_NOW_KEY = 'tanavia_buy_now';
+const BUY_NOW_BACKUP_KEY = 'tanavia_cart_backup';
 
-/**
- * Set the buy-now cart (single item) and remember previous cart
- */
 export function setBuyNow(items: CartItem[]): void {
   if (typeof window === 'undefined') return;
-
-  // Remember previous cart so we can restore if user cancels
   const prevCart = getCart();
-  localStorage.setItem('tanavia_cart_backup', JSON.stringify(prevCart));
-
-  // Replace cart with buy-now items
+  localStorage.setItem(BUY_NOW_BACKUP_KEY, JSON.stringify(prevCart));
   setCart(items);
 }
 
-/**
- * Restore the cart from backup (called when user cancels buy-now flow)
- */
 export function restoreCartFromBackup(): void {
   if (typeof window === 'undefined') return;
-
-  const raw = localStorage.getItem('tanavia_cart_backup');
+  const raw = localStorage.getItem(BUY_NOW_BACKUP_KEY);
   if (!raw) {
     clearCart();
     return;
   }
-
   try {
     const prev = JSON.parse(raw) as CartItem[];
     setCart(prev);
-    localStorage.removeItem('tanavia_cart_backup');
+    localStorage.removeItem(BUY_NOW_BACKUP_KEY);
   } catch {
     clearCart();
   }
 }
 
-/**
- * Clear the backup (called when order is placed successfully)
- */
 export function clearCartBackup(): void {
   if (typeof window === 'undefined') return;
-  localStorage.removeItem('tanavia_cart_backup');
+  localStorage.removeItem(BUY_NOW_BACKUP_KEY);
 }
 
-/**
- * Check if there's a pending buy-now session
- */
 export function hasBuyNowSession(): boolean {
   if (typeof window === 'undefined') return false;
-  return localStorage.getItem('tanavia_cart_backup') !== null;
+  return localStorage.getItem(BUY_NOW_BACKUP_KEY) !== null;
 }

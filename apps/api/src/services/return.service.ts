@@ -208,15 +208,15 @@ export class ReturnService {
     if (filters.search) {
       const q = filters.search.trim();
       where.OR = [
-        { returnNumber: { contains: q, mode: 'insensitive' } },
+        { returnNumber: { contains: q, } },
         {
           order: {
-            orderNumber: { contains: q, mode: 'insensitive' },
+            orderNumber: { contains: q, },
           },
         },
         {
           order: {
-            customerName: { contains: q, mode: 'insensitive' },
+            customerName: { contains: q, },
           },
         },
       ];
@@ -811,7 +811,7 @@ export class ReturnService {
             {
               productId: retItem.productId,
               variantId: retItem.variantId,
-              type: 'RETURN_DAMAGE',
+              type: 'DAMAGE',
               qty: 0,
               before: 0,
               after: 0,

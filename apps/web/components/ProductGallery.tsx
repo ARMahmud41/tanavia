@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 
 interface Props {
   images: string[];
@@ -12,6 +12,11 @@ export function ProductGallery({ images, productName, discount = 0 }: Props) {
   const [activeIdx, setActiveIdx] = useState(0);
   const [previewOpen, setPreviewOpen] = useState(false);
 
+  // Reset active index whenever images array changes (e.g., color change)
+  useEffect(() => {
+    setActiveIdx(0);
+  }, [images]);
+
   const activeImage = images[activeIdx] || null;
 
   return (
@@ -19,9 +24,7 @@ export function ProductGallery({ images, productName, discount = 0 }: Props) {
       {/* Main image */}
       <div
         className={`relative aspect-square rounded-xl overflow-hidden bg-sand border border-line ${
-          activeImage
-            ? 'cursor-zoom-in hover:shadow-lg transition'
-            : ''
+          activeImage ? 'cursor-zoom-in hover:shadow-lg transition' : ''
         }`}
         onClick={() => activeImage && setPreviewOpen(true)}
       >
@@ -49,7 +52,7 @@ export function ProductGallery({ images, productName, discount = 0 }: Props) {
         <div className="grid grid-cols-4 sm:grid-cols-5 gap-3 mt-4">
           {images.map((img, i) => (
             <button
-              key={i}
+              key={`${img}-${i}`}
               type="button"
               onClick={() => setActiveIdx(i)}
               className={`aspect-square rounded-lg overflow-hidden bg-sand border-2 transition ${
@@ -88,7 +91,6 @@ export function ProductGallery({ images, productName, discount = 0 }: Props) {
             ✕
           </button>
 
-          {/* Prev / Next */}
           {images.length > 1 && (
             <>
               <button
@@ -124,7 +126,6 @@ export function ProductGallery({ images, productName, discount = 0 }: Props) {
             onClick={(e) => e.stopPropagation()}
           />
 
-          {/* Counter */}
           {images.length > 1 && (
             <p className="absolute bottom-4 left-1/2 -translate-x-1/2 text-white/80 text-sm bg-black/50 px-3 py-1 rounded-full">
               {activeIdx + 1} / {images.length}

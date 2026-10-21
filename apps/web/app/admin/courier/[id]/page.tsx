@@ -86,7 +86,7 @@ export default function CourierDetailPage() {
         api.get<Courier>(`/api/courier/${courierId}`, { token }),
         api.get<Rate[]>(`/api/courier/${courierId}/rates`, { token }),
       ]);
-      setCourier(cRes.data);
+      setCourier(cRes.data ?? null);
       setRates(rRes.data || []);
     } catch (err) {
       const msg =
@@ -117,7 +117,7 @@ export default function CourierDetailPage() {
         updates,
         { token }
       );
-      setCourier(res.data);
+      setCourier(res.data ?? null);
     } catch (err) {
       const msg =
         err instanceof ApiError

@@ -17,23 +17,23 @@ async function errorHandlerPlugin(app: FastifyInstance) {
 
     // Custom app errors
     if (err instanceof AppError) {
-      return reply.code(err.statusCode).send({
+      return reply.code((err as any).statusCode).send({
         success: false,
-        error: err.code,
-        message: err.message,
+        error: (err as any).code,
+        message: (err as any).message,
         details: err.details,
       });
     }
 
     // Prisma known errors
-    if (err.code === 'P2002') {
+    if ((err as any).code === 'P2002') {
       return reply.code(409).send({
         success: false,
         error: 'CONFLICT',
         message: 'This record already exists',
       });
     }
-    if (err.code === 'P2025') {
+    if ((err as any).code === 'P2025') {
       return reply.code(404).send({
         success: false,
         error: 'NOT_FOUND',
@@ -42,25 +42,25 @@ async function errorHandlerPlugin(app: FastifyInstance) {
     }
 
     // Rate limit error
-    if (err.statusCode === 429) {
+    if ((err as any).statusCode === 429) {
       return reply.code(429).send({
         success: false,
         error: 'TOO_MANY_REQUESTS',
-        message: err.message,
+        message: (err as any).message,
       });
     }
 
     // Unknown error — log full details but don't leak to client
     req.log.error({ err }, 'Unhandled error');
 
-    const statusCode = err.statusCode || 500;
+    const statusCode = (err as any).statusCode || 500;
     return reply.code(statusCode).send({
       success: false,
       error: 'INTERNAL_ERROR',
       message:
         process.env.NODE_ENV === 'production'
           ? 'Something went wrong'
-          : err.message,
+          : (err as any).message,
     });
   });
 

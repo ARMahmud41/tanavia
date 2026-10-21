@@ -2,7 +2,16 @@
 
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
-import { getCart, updateQty, removeFromCart, type CartItem } from '@/lib/cart';
+import {
+  getCart,
+  updateQty,
+  removeFromCart,
+  cartSubtotal,
+  cartOriginalSubtotal,
+  cartSavings,
+  cartCount,
+  type CartItem,
+} from '@/lib/cart';
 import { tk } from '@/lib/format';
 
 export default function CartPage() {
@@ -17,7 +26,11 @@ export default function CartPage() {
       setItems(getCart());
     }
     window.addEventListener('cart-updated', update);
-    return () => window.removeEventListener('cart-updated', update);
+    window.addEventListener('cart-change', update);
+    return () => {
+      window.removeEventListener('cart-updated', update);
+      window.removeEventListener('cart-change', update);
+    };
   }, []);
 
   if (!mounted) {
@@ -28,18 +41,16 @@ export default function CartPage() {
     );
   }
 
-  // Compute totals
-  const subtotal = items.reduce((sum, item) => {
-    const finalPrice = Math.round(item.price * (1 - item.discount / 100));
-    return sum + finalPrice * item.qty;
-  }, 0);
-
-  const totalOriginal = items.reduce(
-    (sum, item) => sum + item.price * item.qty,
-    0
-  );
-
-  const savings = totalOriginal - subtotal;
+  // ============================================
+  // Totals — via shared helpers from @/lib/cart
+  // NOTE: item.price is the BASE (pre-discount) price.
+  //       Discount = price × (discount / 100)
+  //       Final = price × (1 − discount / 100)
+  // ============================================
+  const subtotal = cartSubtotal(items);
+  const totalOriginal = cartOriginalSubtotal(items);
+  const savings = cartSavings(items);
+  const totalQty = cartCount(items);
 
   // Empty cart
   if (items.length === 0) {
@@ -66,16 +77,18 @@ export default function CartPage() {
         Your Cart
       </h1>
       <p className="text-muted text-sm mb-8">
-        {items.length} {items.length === 1 ? 'item' : 'items'}
+        {totalQty} {totalQty === 1 ? 'item' : 'items'}
       </p>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
         {/* Items */}
         <div className="lg:col-span-2 space-y-4">
           {items.map((item) => {
-            const finalPrice = Math.round(
-              item.price * (1 - item.discount / 100)
-            );
+            const orig = Number(item.price) || 0;
+            const disc = Number(item.discount) || 0;
+            const finalPrice = orig * (1 - disc / 100);
+            const hasDiscount = disc > 0;
+
             return (
               <div
                 key={item.variantId}
@@ -114,11 +127,16 @@ export default function CartPage() {
                     </div>
                     <div className="flex items-baseline gap-2 mt-2">
                       <span className="text-wine font-semibold">
-                        {tk(finalPrice)}
+                        {tk(Math.round(finalPrice))}
                       </span>
-                      {item.discount > 0 && (
+                      {hasDiscount && (
                         <span className="text-muted text-xs line-through">
-                          {tk(item.price)}
+                          {tk(orig)}
+                        </span>
+                      )}
+                      {hasDiscount && (
+                        <span className="text-leaf text-xs font-medium">
+                          -{disc}%
                         </span>
                       )}
                     </div>
@@ -175,12 +193,12 @@ export default function CartPage() {
             <div className="space-y-2 text-sm mb-4">
               <div className="flex justify-between">
                 <span className="text-muted">Subtotal</span>
-                <span>{tk(totalOriginal)}</span>
+                <span>{tk(Math.round(totalOriginal))}</span>
               </div>
               {savings > 0 && (
                 <div className="flex justify-between text-leaf">
                   <span>Discount</span>
-                  <span>− {tk(savings)}</span>
+                  <span>− {tk(Math.round(savings))}</span>
                 </div>
               )}
               <div className="flex justify-between">
@@ -193,7 +211,7 @@ export default function CartPage() {
               <div className="flex justify-between items-baseline">
                 <span className="font-semibold">Total</span>
                 <span className="text-wine font-semibold text-2xl">
-                  {tk(subtotal)}
+                  {tk(Math.round(subtotal))}
                 </span>
               </div>
             </div>

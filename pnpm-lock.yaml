@@ -42,7 +42,7 @@ importers:
         specifier: ^10.1.2
         version: 10.1.2
       '@fastify/rate-limit':
-        specifier: ^10.1.1
+        specifier: ^10.3.0
         version: 10.3.0
       '@fastify/static':
         specifier: ^10.1.5

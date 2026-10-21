@@ -62,8 +62,8 @@ export class ReviewService {
     if (filters.search) {
       const q = filters.search.trim();
       where.OR = [
-        { name: { contains: q, mode: 'insensitive' } },
-        { comment: { contains: q, mode: 'insensitive' } },
+        { name: { contains: q, } },
+        { comment: { contains: q, } },
       ];
     }
 

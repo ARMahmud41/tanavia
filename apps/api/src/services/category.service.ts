@@ -16,6 +16,11 @@ interface CreateCategoryInput {
   position?: number;
   featured?: boolean;
   active?: boolean;
+  // 🟢 নতুন ব্যানার ফিল্ড
+  bannerTitle?: string | null;
+  bannerSubtitle?: string | null;
+  bannerImage?: string | null;
+  bannerColor?: string | null;
 }
 
 interface UpdateCategoryInput extends Partial<CreateCategoryInput> {}
@@ -33,6 +38,11 @@ const CATEGORY_SELECT = {
   position: true,
   featured: true,
   active: true,
+  // 🟢 নতুন ব্যানার ফিল্ড
+  bannerTitle: true,
+  bannerSubtitle: true,
+  bannerImage: true,
+  bannerColor: true,
   createdAt: true,
   updatedAt: true,
   _count: {
@@ -139,6 +149,11 @@ export class CategoryService {
         position: input.position ?? 0,
         featured: input.featured ?? false,
         active: input.active ?? true,
+        // 🟢 নতুন ফিল্ড সেভ
+        bannerTitle: input.bannerTitle || null,
+        bannerSubtitle: input.bannerSubtitle || null,
+        bannerImage: input.bannerImage || null,
+        bannerColor: input.bannerColor || null,
       },
       select: CATEGORY_SELECT,
     });
@@ -206,6 +221,12 @@ export class CategoryService {
     if (input.position !== undefined) data.position = input.position;
     if (input.featured !== undefined) data.featured = input.featured;
     if (input.active !== undefined) data.active = input.active;
+    
+    // 🟢 নতুন ফিল্ড আপডেট
+    if (input.bannerTitle !== undefined) data.bannerTitle = input.bannerTitle || null;
+    if (input.bannerSubtitle !== undefined) data.bannerSubtitle = input.bannerSubtitle || null;
+    if (input.bannerImage !== undefined) data.bannerImage = input.bannerImage || null;
+    if (input.bannerColor !== undefined) data.bannerColor = input.bannerColor || null;
 
     const updated = await prisma.category.update({
       where: { id },

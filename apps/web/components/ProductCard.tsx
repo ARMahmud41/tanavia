@@ -61,19 +61,23 @@ export function ProductCard({ product }: Props) {
     if (outOfStock || !firstAvailable) return;
 
     try {
-      addToCart({
-        productId: product.id,
-        slug: product.slug,
-        name: product.name,
-        price: finalPrice,
-        originalPrice: Number(product.price),
-        discount: product.discount,
-        image: imageUrl || '',
-        variantId: firstAvailable.id,
-        size: firstAvailable.size,
-        color: firstAvailable.color,
-        qty: 1,
-      });
+      addToCart(
+        {
+          productId: product.id,
+          variantId: firstAvailable.id,
+          name: product.name,
+          slug: product.slug,
+          image: imageUrl || '',
+          price: Number(product.price),
+          discount: Number(product.discount) || 0,
+          size: firstAvailable.size,
+          color: firstAvailable.color,
+          maxQty:
+            Number(firstAvailable.qty) -
+            Number(firstAvailable.reserved || 0),
+        },
+        1
+      );
 
       setAdded(true);
       setTimeout(() => setAdded(false), 1500);
@@ -198,7 +202,7 @@ export function ProductCard({ product }: Props) {
           <div className="text-xs text-muted uppercase tracking-wide mb-1">
             {typeof product.category === 'string'
               ? product.category
-              : product.category.nameBn || product.category.name}
+              : product.category.name}
           </div>
         )}
         <h3 className="font-medium text-ink mb-2 line-clamp-2 group-hover:text-wine transition">

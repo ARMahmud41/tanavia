@@ -13,21 +13,13 @@ export async function orderRoutes(app: FastifyInstance) {
     {
       preHandler: [validate(PlaceOrderSchema, 'body')],
       config: {
-        rateLimit: {
-          max: 10,
-          timeWindow: '1 hour',
-        },
+        rateLimit: { max: 10, timeWindow: '1 hour' },
       },
     },
     async (req, reply) => {
       const input = req.body as any;
-
       const order = await OrderService.placeOnlineOrder(input, app.prisma);
-
-      return reply.code(201).send({
-        success: true,
-        data: order,
-      });
+      return reply.code(201).send({ success: true, data: order });
     }
   );
 
@@ -36,22 +28,11 @@ export async function orderRoutes(app: FastifyInstance) {
   // ============================================
   app.post(
     '/offline',
-    {
-      preHandler: [app.authenticate, requireStaff],
-    },
+    { preHandler: [app.authenticate, requireStaff] },
     async (req, reply) => {
       const input = req.body as any;
-
-      const order = await OrderService.placeOfflineOrder(
-        input,
-        app.prisma,
-        req.user.sub
-      );
-
-      return reply.code(201).send({
-        success: true,
-        data: order,
-      });
+      const order = await OrderService.placeOfflineOrder(input, app.prisma, req.user.sub);
+      return reply.code(201).send({ success: true, data: order });
     }
   );
 
@@ -60,16 +41,8 @@ export async function orderRoutes(app: FastifyInstance) {
   // ============================================
   app.get('/track/:orderNumber', async (req, reply) => {
     const { orderNumber } = req.params as { orderNumber: string };
-
-    const order = await OrderService.getByOrderNumber(
-      orderNumber.toUpperCase(),
-      app.prisma
-    );
-
-    return reply.send({
-      success: true,
-      data: order,
-    });
+    const order = await OrderService.getByOrderNumber(orderNumber.toUpperCase(), app.prisma);
+    return reply.send({ success: true, data: order });
   });
 
   // ============================================
@@ -77,21 +50,12 @@ export async function orderRoutes(app: FastifyInstance) {
   // ============================================
   app.get(
     '/my',
-    {
-      preHandler: [app.authenticate],
-    },
+    { preHandler: [app.authenticate] },
     async (req, reply) => {
       const query = req.query as { page?: string; limit?: string };
       const page = query.page ? Number(query.page) : 1;
       const limit = query.limit ? Number(query.limit) : 20;
-
-      const result = await OrderService.getMyOrders(
-        req.user.sub,
-        app.prisma,
-        page,
-        limit
-      );
-
+      const result = await OrderService.getMyOrders(req.user.sub, app.prisma, page, limit);
       return reply.send({
         success: true,
         data: result.items,
@@ -101,13 +65,11 @@ export async function orderRoutes(app: FastifyInstance) {
   );
 
   // ============================================
-  // GET /api/orders — list with filters (role-aware)
+  // GET /api/orders — list with filters
   // ============================================
   app.get(
     '/',
-    {
-      preHandler: [app.authenticate, requireStaff],
-    },
+    { preHandler: [app.authenticate, requireStaff] },
     async (req, reply) => {
       const q = req.query as Record<string, string | undefined>;
       const user = req.user as any;
@@ -139,28 +101,25 @@ export async function orderRoutes(app: FastifyInstance) {
   );
 
   // ============================================
-  // GET /api/orders/counts — channel counts for segmented control
+  // GET /api/orders/counts
   // ============================================
   app.get(
     '/counts',
-    {
-      preHandler: [app.authenticate, requireStaff],
-    },
+    { preHandler: [app.authenticate, requireStaff] },
     async (req, reply) => {
       const user = req.user as any;
       const isAdmin = user.role === 'ADMIN';
       const q = req.query as Record<string, string | undefined>;
 
-      // Build base where from query (excluding channel)
       const baseWhere: any = {};
       if (q.status) baseWhere.status = q.status;
       if (q.paymentStatus) baseWhere.paymentStatus = q.paymentStatus;
       if (q.paymentMethod) baseWhere.paymentMethod = q.paymentMethod;
       if (q.q) {
         baseWhere.OR = [
-          { orderNumber: { contains: q.q, mode: 'insensitive' } },
-          { customerName: { contains: q.q, mode: 'insensitive' } },
-          { customerPhone: { contains: q.q, mode: 'insensitive' } },
+          { orderNumber: { contains: q.q } },
+          { customerName: { contains: q.q } },
+          { customerPhone: { contains: q.q } },
         ];
       }
       if (q.from || q.to) {
@@ -179,9 +138,7 @@ export async function orderRoutes(app: FastifyInstance) {
           : app.prisma.order.count({
               where: { ...baseWhere, channel: 'OFFLINE', createdById: user.sub },
             }),
-        app.prisma.order.count({
-          where: { ...baseWhere, channel: 'ONLINE' },
-        }),
+        app.prisma.order.count({ where: { ...baseWhere, channel: 'ONLINE' } }),
         app.prisma.order.count({
           where: isAdmin
             ? { ...baseWhere, channel: 'OFFLINE' }
@@ -189,65 +146,44 @@ export async function orderRoutes(app: FastifyInstance) {
         }),
       ]);
 
-      return reply.send({
-        success: true,
-        data: { all, online, offline },
-      });
+      return reply.send({ success: true, data: { all, online, offline } });
     }
   );
 
   // ============================================
-  // GET /api/orders/stats — dashboard stats
+  // GET /api/orders/stats
   // ============================================
   app.get(
     '/stats',
-    {
-      preHandler: [app.authenticate, requireStaff],
-    },
+    { preHandler: [app.authenticate, requireStaff] },
     async (req, reply) => {
       const now = new Date();
       const startOfDay = new Date(now);
       startOfDay.setHours(0, 0, 0, 0);
 
-      const [todayOrders, needsAction, todayRevenue, codToCollect] =
-        await Promise.all([
-          // Today's order count
-          app.prisma.order.count({
-            where: { createdAt: { gte: startOfDay } },
-          }),
-
-          // Needs action: PLACED or REVIEW payment
-          app.prisma.order.count({
-            where: {
-              OR: [
-                { status: 'PLACED' },
-                { paymentStatus: 'REVIEW' },
-              ],
-            },
-          }),
-
-          // Today's revenue: PAID or DELIVERED today
-          app.prisma.order.aggregate({
-            where: {
-              createdAt: { gte: startOfDay },
-              OR: [
-                { paymentStatus: 'PAID' },
-                { status: 'DELIVERED' },
-              ],
-            },
-            _sum: { total: true },
-          }),
-
-          // COD to collect: DELIVERED but not settled
-          app.prisma.order.aggregate({
-            where: {
-              paymentMethod: 'COD',
-              status: 'DELIVERED',
-              codSettledAt: null,
-            },
-            _sum: { total: true },
-          }),
-        ]);
+      const [todayOrders, needsAction, todayRevenue, codToCollect] = await Promise.all([
+        app.prisma.order.count({ where: { createdAt: { gte: startOfDay } } }),
+        app.prisma.order.count({
+          where: {
+            OR: [{ status: 'PLACED' }, { paymentStatus: 'REVIEW' }],
+          },
+        }),
+        app.prisma.order.aggregate({
+          where: {
+            createdAt: { gte: startOfDay },
+            OR: [{ paymentStatus: 'PAID' }, { status: 'DELIVERED' }],
+          },
+          _sum: { total: true },
+        }),
+        app.prisma.order.aggregate({
+          where: {
+            paymentMethod: 'COD',
+            status: 'DELIVERED',
+            codSettledAt: null,
+          },
+          _sum: { total: true },
+        }),
+      ]);
 
       return reply.send({
         success: true,
@@ -262,84 +198,227 @@ export async function orderRoutes(app: FastifyInstance) {
   );
 
   // ============================================
-  // GET /api/orders/:id — staff: role-aware detail
+  // GET /api/orders/:id — detail
   // ============================================
   app.get(
     '/:id',
-    {
-      preHandler: [app.authenticate, requireStaff],
-    },
+    { preHandler: [app.authenticate, requireStaff] },
     async (req, reply) => {
       const { id } = req.params as { id: string };
-
       const user = req.user as any;
-      console.log('[DEBUG] getById route - user:', JSON.stringify({
-        sub: user?.sub,
-        id: user?.id,
-        role: user?.role,
-        email: user?.email,
-      }));
 
       const order = await OrderService.getById(id, app.prisma, {
         role: user.role,
         userId: user.sub,
       });
 
-      return reply.send({
-        success: true,
-        data: order,
-      });
+      return reply.send({ success: true, data: order });
     }
   );
 
   // ============================================
-  // PATCH /api/orders/:id/status — admin: change status
+  // PATCH /api/orders/:id/status
   // ============================================
   app.patch(
     '/:id/status',
-    {
-      preHandler: [app.authenticate, requireAdmin],
-    },
+    { preHandler: [app.authenticate, requireAdmin] },
     async (req, reply) => {
       const { id } = req.params as { id: string };
       const { status, note } = req.body as { status: string; note?: string };
-
-      const order = await OrderService.updateStatus(
-        id,
-        status,
-        note,
-        app.prisma,
-        req.user.sub
-      );
-
-      return reply.send({
-        success: true,
-        data: order,
-      });
+      const order = await OrderService.updateStatus(id, status, note, app.prisma, req.user.sub);
+      return reply.send({ success: true, data: order });
     }
   );
 
   // ============================================
-  // PATCH /api/orders/:id/payment — admin: mark paid
+  // PATCH /api/orders/:id/payment
   // ============================================
   app.patch(
     '/:id/payment',
-    {
-      preHandler: [app.authenticate, requireAdmin],
-    },
+    { preHandler: [app.authenticate, requireAdmin] },
     async (req, reply) => {
       const { id } = req.params as { id: string };
+      const order = await OrderService.markPaid(id, app.prisma, req.user.sub);
+      return reply.send({ success: true, data: order });
+    }
+  );
 
-      const order = await OrderService.markPaid(
-        id,
-        app.prisma,
-        req.user.sub
+  // ============================================
+  // POST /api/orders/manual — admin: create manual order
+  // ============================================
+  app.post(
+    '/manual',
+    { preHandler: [app.authenticate, requireAdmin] },
+    async (req, reply) => {
+      const body = req.body as any;
+      const user = req.user as any;
+
+      if (!body.items?.length) {
+        return reply.code(400).send({
+          success: false,
+          message: 'At least one item is required',
+        });
+      }
+
+      const result = await app.prisma.$transaction(
+        async (tx) => {
+          let orderNumber = '';
+          for (let i = 0; i < 10; i++) {
+            const num = 'TN-' + String(Math.floor(100000 + Math.random() * 900000));
+            const existing = await tx.order.findUnique({ where: { orderNumber: num } });
+            if (!existing) {
+              orderNumber = num;
+              break;
+            }
+          }
+          if (!orderNumber) throw new Error('Failed to generate order number');
+
+          let subtotal = 0;
+          const lineItems: any[] = [];
+
+          for (const item of body.items) {
+            const product = await tx.product.findUnique({
+              where: { id: item.productId },
+              select: {
+                id: true, name: true, price: true, cost: true, discount: true, active: true,
+              },
+            });
+            if (!product) throw new Error(`Product not found: ${item.productId}`);
+            if (!product.active) throw new Error(`Product inactive: ${product.name}`);
+
+            const variant = await tx.variant.findUnique({
+              where: {
+                productId_size_color: {
+                  productId: item.productId,
+                  size: item.size,
+                  color: item.color,
+                },
+              },
+            });
+            if (!variant) throw new Error(`Invalid size/color for ${product.name}`);
+
+            const available = variant.qty - variant.reserved;
+            if (available < item.qty) {
+              throw new Error(
+                `Insufficient stock for ${product.name} (${item.size}/${item.color}). Available: ${available}`
+              );
+            }
+
+            const basePrice = Number(product.price);
+            const discountPct = Number(product.discount || 0);
+            const finalPrice = Math.round(basePrice * (1 - discountPct / 100));
+
+            lineItems.push({
+              productId: product.id,
+              variantId: variant.id,
+              name: product.name,
+              size: item.size,
+              color: item.color,
+              qty: item.qty,
+              price: finalPrice,
+              cost: Number(product.cost),
+            });
+            subtotal += finalPrice * item.qty;
+          }
+
+          const deliveryFee = Number(body.deliveryFee ?? 0);
+          const total = subtotal + deliveryFee;
+
+          // Upsert Customer (for tracking)
+          const cleanPhone = body.customerPhone.replace(/\D/g, '');
+          let customer = await tx.customer.findUnique({ where: { phone: cleanPhone } });
+
+          if (!customer) {
+            customer = await tx.customer.create({
+              data: {
+                name: body.customerName,
+                phone: cleanPhone,
+                email: body.customerEmail || null,
+                source: body.source || 'OTHER',
+                totalOrders: 1,
+                totalSpent: total,
+                lastOrderAt: new Date(),
+              },
+            });
+          } else {
+            customer = await tx.customer.update({
+              where: { id: customer.id },
+              data: {
+                totalOrders: { increment: 1 },
+                totalSpent: { increment: total },
+                lastOrderAt: new Date(),
+              },
+            });
+          }
+
+          // ✅ FIXED: Create order with both userId AND customerId
+          const order = await tx.order.create({
+            data: {
+              orderNumber,
+              channel: 'OFFLINE',
+              userId: user?.sub || null,       // Admin user who created it
+              customerId: customer.id,          // Customer record linked
+              createdById: user?.sub || null,
+              status: 'CONFIRMED',
+              customerName: body.customerName,
+              customerPhone: cleanPhone,
+              customerEmail: body.customerEmail || null,
+              address: body.address,
+              district: body.district,
+              note: body.note
+                ? `[${body.source || 'SOCIAL'}] ${body.note}`
+                : `Source: ${body.source || 'SOCIAL'}`,
+              subtotal,
+              discount: 0,
+              deliveryFee,
+              total,
+              paymentMethod: body.paymentMethod,
+              paymentStatus: body.paymentMethod === 'COD' ? 'WAITING' : 'REVIEW',
+              paymentTxId: body.paymentTxId || null,
+            },
+          });
+
+          for (const li of lineItems) {
+            await tx.orderItem.create({
+              data: {
+                orderId: order.id,
+                productId: li.productId,
+                name: li.name,
+                size: li.size,
+                color: li.color,
+                qty: li.qty,
+                price: li.price,
+                cost: li.cost,
+              },
+            });
+          }
+
+          await tx.orderEvent.create({
+            data: {
+              orderId: order.id,
+              status: 'CONFIRMED',
+              note: `Manual order from ${body.source || 'Social'}`,
+              actor: user?.sub || 'admin',
+            },
+          });
+
+          for (const li of lineItems) {
+            await tx.variant.update({
+              where: { id: li.variantId },
+              data: { reserved: { increment: li.qty } },
+            });
+            await tx.product.update({
+              where: { id: li.productId },
+              data: { soldCount: { increment: li.qty } },
+            });
+          }
+
+          return order;
+        },
+        { isolationLevel: 'Serializable', timeout: 15000 }
       );
 
-      return reply.send({
-        success: true,
-        data: order,
-      });
+      return reply.code(201).send({ success: true, data: result });
     }
   );
 }

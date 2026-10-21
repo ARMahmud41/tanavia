@@ -6,9 +6,10 @@
 generator client {
   provider = "prisma-client-js"
 }
+
 datasource db {
-  provider  = "mysql"
-  url       = env("DATABASE_URL")
+  provider = "mysql"
+  url      = env("DATABASE_URL")
 }
 
 // ============================================
@@ -25,6 +26,40 @@ enum Role {
 enum ShiftStatus {
   OPEN
   CLOSED
+}
+
+enum OrderChannel {
+  ONLINE
+  OFFLINE
+}
+
+enum OrderStatus {
+  PLACED
+  CONFIRMED
+  PACKED
+  SHIPPED
+  DELIVERED
+  CANCELLED
+  RETURNED
+}
+
+enum PaymentMethod {
+  COD
+  BKASH
+  NAGAD
+  ROCKET
+  CARD
+  CASH
+}
+
+enum PaymentStatus {
+  UNPAID
+  PENDING
+  WAITING
+  REVIEW
+  PAID
+  FAILED
+  REFUNDED
 }
 
 // ============================================
@@ -46,6 +81,7 @@ model User {
   failedLogins    Int       @default(0)
   lockedUntil     DateTime?
   active          Boolean   @default(true)
+  target          Float?    @default(0)
   createdAt       DateTime  @default(now())
   updatedAt       DateTime  @updatedAt
 
@@ -56,15 +92,14 @@ model User {
   wishlist        Wishlist[]
   notifications   Notification[]
   shifts          Shift[]
-  reports         StaffReport[]   @relation("ReportedBy")
-  resolvedReports StaffReport[]   @relation("ResolvedBy")
+  reports         StaffReport[]  @relation("ReportedBy")
+  resolvedReports StaffReport[]  @relation("ResolvedBy")
   auditLogs       AuditLog[]
   cashDrawers     CashDrawer[]
 
-  // Customer module relations
-  customerProfile  Customer?       @relation("UserCustomerProfile")
+  customerProfile  Customer?      @relation("UserCustomerProfile")
   authoredNotes    CustomerNote[]
-  blockedCustomers Customer[]      @relation("CustomerBlockedBy")
+  blockedCustomers Customer[]     @relation("CustomerBlockedBy")
 
   @@index([email])
   @@index([phone])
@@ -76,44 +111,50 @@ model User {
 // ============================================
 
 model Customer {
-  id            String    @id @default(cuid())
-  name          String
-  phone         String    @unique  // normalized: 01XXXXXXXXX
-  email         String?
-  userId        String?   @unique  // link to User account (optional)
+  id     String  @id @default(cuid())
+  name   String
+  phone  String  @unique
+  email  String?
+  userId String? @unique
+
+  source      String    @default("MANUAL")
+  totalOrders Int       @default(0)
+  totalSpent  Decimal   @default(0) @db.Decimal(12, 2)
+  lastOrderAt DateTime?
 
   blockedAt     DateTime?
   blockedReason String?   @db.Text
   blockedById   String?
 
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
-  user          User?     @relation("UserCustomerProfile", fields: [userId], references: [id])
-  blockedBy     User?     @relation("CustomerBlockedBy", fields: [blockedById], references: [id])
+  user      User? @relation("UserCustomerProfile", fields: [userId], references: [id])
+  blockedBy User? @relation("CustomerBlockedBy", fields: [blockedById], references: [id])
 
-  orders        Order[]
-  notes         CustomerNote[]
-  tags          CustomerTag[]
+  orders Order[]
+  notes  CustomerNote[]
+  tags   CustomerTag[]
 
   @@index([phone])
   @@index([userId])
+  @@index([source])
   @@index([createdAt])
   @@index([blockedAt])
 }
 
 model CustomerNote {
-  id         String   @id @default(cuid())
+  id         String  @id @default(cuid())
   customerId String
   authorId   String
-  text       String   @db.Text
-  pinned     Boolean  @default(false)
+  text       String  @db.Text
+  pinned     Boolean @default(false)
 
-  createdAt  DateTime @default(now())
-  updatedAt  DateTime @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
-  customer   Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
-  author     User     @relation(fields: [authorId], references: [id])
+  customer Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  author   User     @relation(fields: [authorId], references: [id])
 
   @@index([customerId])
   @@index([authorId])
@@ -126,7 +167,7 @@ model CustomerTag {
   tag        String
   createdAt  DateTime @default(now())
 
-  customer   Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  customer Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
 
   @@unique([customerId, tag])
   @@index([customerId])
@@ -166,6 +207,7 @@ model Address {
   phone     String
   address   String   @db.Text
   district  String
+  upazila   String?
   isDefault Boolean  @default(false)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -215,7 +257,12 @@ model Category {
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
-  products    Product[]
+  bannerTitle    String?
+  bannerSubtitle String?
+  bannerImage    String?
+  bannerColor    String? @default("#D2B48C")
+
+  products Product[]
 
   @@index([slug])
   @@index([position])
@@ -234,41 +281,41 @@ enum ProductStatus {
 }
 
 model Product {
-  id            String        @id @default(cuid())
-  slug          String        @unique
-  name          String
-  nameBn        String?
-  description   String        @db.Text
-  descriptionBn String?       @db.Text
-  categoryId    String?
-  category      Category?     @relation(fields: [categoryId], references: [id])
-  categoryLegacy String?      @map("category")  // old string field — keep for migration
-  brand         String        @default("TANAVIA")
-  sku           String        @unique
-  barcode       String        @unique
-  cost          Decimal       @db.Decimal(10, 2)
-  price         Decimal       @db.Decimal(10, 2)
-  discount      Int           @default(0)
-  status        ProductStatus @default(ACTIVE)
-  active        Boolean       @default(true)
-  featured      Boolean       @default(false)
-  tryable       Boolean       @default(true)
-  freeDelivery  Boolean       @default(false)
-  shape         String        @default("tee")
-  images        Json          @default("[]")
-  tags          Json          @default("[]")
-  rating        Float         @default(0)
-  reviewCount   Int           @default(0)
-  soldCount     Int           @default(0)
+  id             String        @id @default(cuid())
+  slug           String        @unique
+  name           String
+  nameBn         String?
+  description    String        @db.Text
+  descriptionBn  String?       @db.Text
+  categoryId     String?
+  category       Category?     @relation(fields: [categoryId], references: [id])
+  categoryLegacy String?       @map("category")
+  brand          String        @default("TANAVIA")
+  sku            String        @unique
+  barcode        String        @unique
+  cost           Decimal       @db.Decimal(10, 2)
+  price          Decimal       @db.Decimal(10, 2)
+  discount       Int           @default(0)
+  status         ProductStatus @default(ACTIVE)
+  active         Boolean       @default(true)
+  featured       Boolean       @default(false)
+  tryable        Boolean       @default(true)
+  freeDelivery   Boolean       @default(false)
+  shape          String        @default("tee")
+  images         Json          @default("[]")
+  tags           Json          @default("[]")
+  rating         Float         @default(0)
+  reviewCount    Int           @default(0)
+  soldCount      Int           @default(0)
 
   metaTitle       String?
-  metaDescription String?       @db.Text
+  metaDescription String?   @db.Text
   deletedAt       DateTime?
   deletedById     String?
-  deletedReason   String?       @db.Text
-  lowStockAt      Int           @default(5)
-  createdAt       DateTime      @default(now())
-  updatedAt       DateTime      @updatedAt
+  deletedReason   String?   @db.Text
+  lowStockAt      Int       @default(5)
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
 
   productImages ProductImage[]
   variants      Variant[]
@@ -288,21 +335,17 @@ model Product {
   @@index([deletedAt])
 }
 
-// ============================================
-// PRODUCT IMAGE (ordered, with alt + primary + per-color)
-// ============================================
-
 model ProductImage {
   id        String   @id @default(cuid())
   productId String
   url       String
   alt       String?
-  color     String?  // null = applies to all colors (fallback)
+  color     String?
   position  Int      @default(0)
   isPrimary Boolean  @default(false)
   createdAt DateTime @default(now())
 
-  product   Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
 
   @@index([productId])
   @@index([productId, color])
@@ -311,23 +354,23 @@ model ProductImage {
 }
 
 model Variant {
-  id           String    @id @default(cuid())
+  id           String   @id @default(cuid())
   productId    String
-  sku          String?   @unique
-  barcode      String?   @unique
+  sku          String?  @unique
+  barcode      String?  @unique
   size         String
   color        String
-  qty          Int       @default(0)
-  reserved     Int       @default(0)
-  reorderLevel Int       @default(5)
-  cost         Decimal?  @db.Decimal(10, 2)  // moving average cost
-  createdAt    DateTime  @default(now())
-  updatedAt    DateTime  @updatedAt
+  qty          Int      @default(0)
+  reserved     Int      @default(0)
+  reorderLevel Int      @default(5)
+  cost         Decimal? @db.Decimal(10, 2)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
 
-  product         Product               @relation(fields: [productId], references: [id], onDelete: Cascade)
-  stockMoves      StockMovement[]
-  purchaseItems   PurchaseOrderItem[]
-  staffReports    StaffReport[]         @relation("VariantReports")
+  product       Product             @relation(fields: [productId], references: [id], onDelete: Cascade)
+  stockMoves    StockMovement[]
+  purchaseItems PurchaseOrderItem[]
+  staffReports  StaffReport[]       @relation("VariantReports")
 
   @@unique([productId, size, color])
   @@index([productId])
@@ -387,62 +430,31 @@ model DropProduct {
 // ORDER (online + offline)
 // ============================================
 
-enum OrderChannel {
-  ONLINE
-  OFFLINE
-}
-
-enum OrderStatus {
-  PLACED
-  CONFIRMED
-  PACKED
-  SHIPPED
-  DELIVERED
-  CANCELLED
-  RETURNED
-}
-
-enum PaymentMethod {
-  COD
-  BKASH
-  NAGAD
-  ROCKET
-  CARD
-  CASH
-}
-
-enum PaymentStatus {
-  UNPAID
-  PENDING
-  WAITING
-  REVIEW
-  PAID
-  FAILED
-  REFUNDED
-}
-
 model Order {
-  id            String       @id @default(cuid())
-  orderNumber   String       @unique
-  channel       OrderChannel @default(ONLINE)
-  userId        String?
-  customerId    String?
-  shiftId       String?
-  createdById   String?
-  status        OrderStatus  @default(PLACED)
+  id          String       @id @default(cuid())
+  orderNumber String       @unique
+  channel     OrderChannel @default(ONLINE)
+
+  // ⚠️ Foreign keys
+  userId      String?
+  customerId  String?
+  shiftId     String?
+  createdById String?
+
+  status OrderStatus @default(PLACED)
 
   customerName  String
   customerPhone String
   customerEmail String?
-  address       String?      @db.Text
+  address       String? @db.Text
   district      String?
-  note          String?      @db.Text
+  note          String? @db.Text
 
-  subtotal      Decimal      @db.Decimal(10, 2)
-  discount      Decimal      @default(0) @db.Decimal(10, 2)
-  deliveryFee   Decimal      @default(0) @db.Decimal(10, 2)
-  total         Decimal      @db.Decimal(10, 2)
-  couponCode    String?
+  subtotal    Decimal @db.Decimal(10, 2)
+  discount    Decimal @default(0) @db.Decimal(10, 2)
+  deliveryFee Decimal @default(0) @db.Decimal(10, 2)
+  total       Decimal @db.Decimal(10, 2)
+  couponCode  String?
 
   paymentMethod PaymentMethod
   paymentStatus PaymentStatus @default(PENDING)
@@ -451,33 +463,35 @@ model Order {
   verifiedAt    DateTime?
   codSettledAt  DateTime?
 
-  cancelReason  String?      @db.Text
-  adminNote     String?      @db.Text
+  cancelReason String? @db.Text
+  adminNote    String? @db.Text
 
-  // Legacy fields (kept for compatibility)
+  // Legacy fields
   courier       String?
   consignmentId String?
   courierStatus String?
   trackingUrl   String?
 
   // New courier relation
-  courierId            String?
-  courierRef           Courier?  @relation("OrderCourier", fields: [courierId], references: [id])
-  courierStatusDetail  String?
-  courierBookedAt      DateTime?
-  courierDeliveredAt   DateTime?
-  courierAttempts      Int       @default(0)
-  codAmount            Decimal?  @db.Decimal(10, 2)
-  settlementId         String?
-  settlement           CourierSettlement? @relation("SettlementOrders", fields: [settlementId], references: [id])
-  returnRecord         CourierReturn?
+  courierId           String?
+  courierRef          Courier?           @relation("OrderCourier", fields: [courierId], references: [id])
+  courierStatusDetail String?
+  courierBookedAt     DateTime?
+  courierDeliveredAt  DateTime?
+  courierAttempts     Int                @default(0)
+  codAmount           Decimal?           @db.Decimal(10, 2)
+  settlementId        String?
+  settlement          CourierSettlement? @relation("SettlementOrders", fields: [settlementId], references: [id])
+  returnRecord        CourierReturn?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  user         User?         @relation(fields: [userId], references: [id])
-  customer     Customer?     @relation(fields: [customerId], references: [id])
-  shift        Shift?        @relation(fields: [shiftId], references: [id])
+  // Relations
+  user     User?     @relation(fields: [userId], references: [id])
+  customer Customer? @relation(fields: [customerId], references: [id])
+  shift    Shift?    @relation(fields: [shiftId], references: [id])
+
   items        OrderItem[]
   events       OrderEvent[]
   transactions Transaction[]
@@ -506,16 +520,29 @@ model OrderItem {
   price     Decimal @db.Decimal(10, 2)
   cost      Decimal @db.Decimal(10, 2)
 
-  order   Order   @relation(fields: [orderId], references: [id], onDelete: Cascade)
-  product Product @relation(fields: [productId], references: [id])
+  order   Order        @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  product Product      @relation(fields: [productId], references: [id])
   returns ReturnItem[]
 
   @@index([orderId])
   @@index([productId])
 }
 
+model OrderEvent {
+  id        String   @id @default(cuid())
+  orderId   String
+  status    String
+  note      String?
+  actor     String?
+  createdAt DateTime @default(now())
+
+  order Order @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@index([orderId])
+}
+
 // ============================================
-// RETURN (customer returns & refunds)
+// RETURN
 // ============================================
 
 enum ReturnStatus {
@@ -559,48 +586,45 @@ enum ItemCondition {
 }
 
 model Return {
-  id             String       @id @default(cuid())
-  returnNumber   String       @unique
-  orderId        String
-  channel        OrderChannel
+  id           String       @id @default(cuid())
+  returnNumber String       @unique
+  orderId      String
+  channel      OrderChannel
 
-  createdById    String
-  approvedById   String?
-  rejectedById   String?
-  inspectedById  String?
-  refundedById   String?
-  shiftId        String?
+  createdById   String
+  approvedById  String?
+  rejectedById  String?
+  inspectedById String?
+  refundedById  String?
+  shiftId       String?
 
-  status         ReturnStatus @default(REQUESTED)
-  reason         ReturnReason
-  reasonNote     String?      @db.Text
+  status     ReturnStatus @default(REQUESTED)
+  reason     ReturnReason
+  reasonNote String?      @db.Text
 
-  refundAmount   Decimal      @default(0) @db.Decimal(10, 2)
-  refundMethod   RefundMethod?
-  refundTxId     String?
-  refundedAt     DateTime?
+  refundAmount Decimal       @default(0) @db.Decimal(10, 2)
+  refundMethod RefundMethod?
+  refundTxId   String?
+  refundedAt   DateTime?
 
-  // Online return logistics
-  courier        String?
-  consignmentId  String?
-  trackingUrl    String?
+  courier       String?
+  consignmentId String?
+  trackingUrl   String?
 
-  // Inspection
   inspectedAt    DateTime?
-  inspectionNote String?      @db.Text
+  inspectionNote String?   @db.Text
 
-  // Rejection
-  rejectionNote  String?      @db.Text
+  rejectionNote String? @db.Text
 
-  notes          String?      @db.Text
-  adminNote      String?      @db.Text
+  notes     String? @db.Text
+  adminNote String? @db.Text
 
-  createdAt      DateTime     @default(now())
-  updatedAt      DateTime     @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
-  order          Order        @relation(fields: [orderId], references: [id])
-  items          ReturnItem[]
-  events         ReturnEvent[]
+  order  Order         @relation(fields: [orderId], references: [id])
+  items  ReturnItem[]
+  events ReturnEvent[]
 
   @@index([orderId])
   @@index([status, createdAt])
@@ -609,24 +633,24 @@ model Return {
 }
 
 model ReturnItem {
-  id           String         @id @default(cuid())
-  returnId     String
-  orderItemId  String
-  productId    String
-  variantId    String?
-  name         String
-  size         String
-  color        String
-  qty          Int
-  unitPrice    Decimal        @db.Decimal(10, 2)
-  unitCost     Decimal        @db.Decimal(10, 2)
+  id          String  @id @default(cuid())
+  returnId    String
+  orderItemId String
+  productId   String
+  variantId   String?
+  name        String
+  size        String
+  color       String
+  qty         Int
+  unitPrice   Decimal @db.Decimal(10, 2)
+  unitCost    Decimal @db.Decimal(10, 2)
 
-  condition    ItemCondition  @default(PENDING)
-  restocked    Boolean        @default(false)
-  restockedAt  DateTime?
+  condition   ItemCondition @default(PENDING)
+  restocked   Boolean       @default(false)
+  restockedAt DateTime?
 
-  return       Return         @relation(fields: [returnId], references: [id], onDelete: Cascade)
-  orderItem    OrderItem      @relation(fields: [orderItemId], references: [id])
+  return    Return    @relation(fields: [returnId], references: [id], onDelete: Cascade)
+  orderItem OrderItem @relation(fields: [orderItemId], references: [id])
 
   @@index([returnId])
   @@index([productId])
@@ -634,33 +658,20 @@ model ReturnItem {
 }
 
 model ReturnEvent {
-  id         String   @id @default(cuid())
-  returnId   String
-  status     String
-  note       String?
-  actorId    String?
-  createdAt  DateTime @default(now())
+  id        String   @id @default(cuid())
+  returnId  String
+  status    String
+  note      String?
+  actorId   String?
+  createdAt DateTime @default(now())
 
-  return     Return   @relation(fields: [returnId], references: [id], onDelete: Cascade)
+  return Return @relation(fields: [returnId], references: [id], onDelete: Cascade)
 
   @@index([returnId])
 }
 
-model OrderEvent {
-  id        String   @id @default(cuid())
-  orderId   String
-  status    String
-  note      String?
-  actor     String?
-  createdAt DateTime @default(now())
-
-  order Order @relation(fields: [orderId], references: [id], onDelete: Cascade)
-
-  @@index([orderId])
-}
-
 // ============================================
-// STOCK MOVEMENT (full audit log)
+// STOCK MOVEMENT
 // ============================================
 
 enum StockMoveType {
@@ -698,7 +709,7 @@ model StockMovement {
 }
 
 // ============================================
-// TRANSACTION (COD waiting / cash received)
+// TRANSACTION
 // ============================================
 
 enum TransactionType {
@@ -737,7 +748,7 @@ model Transaction {
 }
 
 // ============================================
-// EXPENSE (shop costs)
+// EXPENSE
 // ============================================
 
 enum ExpenseCategory {
@@ -776,21 +787,18 @@ model Expense {
   createdAt   DateTime        @default(now())
   updatedAt   DateTime        @updatedAt
 
-  // NEW: Status + account fields
-  status      ExpenseStatus   @default(POSTED)
-  paidFrom    PaidFrom        @default(CASH)
-  reason      String?         @db.Text
+  status   ExpenseStatus @default(POSTED)
+  paidFrom PaidFrom      @default(CASH)
+  reason   String?       @db.Text
 
-  // NEW: Approval workflow
-  approvedBy  String?
-  approvedAt  DateTime?
-  rejectedBy  String?
-  rejectedAt  DateTime?
+  approvedBy String?
+  approvedAt DateTime?
+  rejectedBy String?
+  rejectedAt DateTime?
 
-  // NEW: Reversal (self-relation)
-  reversesId  String?         @unique
-  reverses    Expense?        @relation("ExpenseReversal", fields: [reversesId], references: [id])
-  reversedBy  Expense?        @relation("ExpenseReversal")
+  reversesId String?  @unique
+  reverses   Expense? @relation("ExpenseReversal", fields: [reversesId], references: [id])
+  reversedBy Expense? @relation("ExpenseReversal")
 
   @@index([category, spentAt])
   @@index([spentAt])
@@ -800,7 +808,7 @@ model Expense {
 }
 
 // ============================================
-// CASH DRAWER (daily open/close count)
+// CASH DRAWER
 // ============================================
 
 enum CashDrawerStatus {
@@ -888,19 +896,19 @@ enum PurchaseStatus {
 }
 
 model PurchaseOrder {
-  id         String          @id @default(cuid())
-  poNumber   String          @unique
+  id         String         @id @default(cuid())
+  poNumber   String         @unique
   supplierId String
-  status     PurchaseStatus  @default(DRAFT)
-  subtotal   Decimal         @db.Decimal(10, 2)
-  paid       Decimal         @default(0) @db.Decimal(10, 2)
-  due        Decimal         @db.Decimal(10, 2)
-  note       String?         @db.Text
-  orderedAt  DateTime        @default(now())
+  status     PurchaseStatus @default(DRAFT)
+  subtotal   Decimal        @db.Decimal(10, 2)
+  paid       Decimal        @default(0) @db.Decimal(10, 2)
+  due        Decimal        @db.Decimal(10, 2)
+  note       String?        @db.Text
+  orderedAt  DateTime       @default(now())
   receivedAt DateTime?
   createdBy  String?
-  createdAt  DateTime        @default(now())
-  updatedAt  DateTime        @updatedAt
+  createdAt  DateTime       @default(now())
+  updatedAt  DateTime       @updatedAt
 
   supplier Supplier            @relation(fields: [supplierId], references: [id])
   items    PurchaseOrderItem[]
@@ -911,15 +919,15 @@ model PurchaseOrder {
 }
 
 model PurchaseOrderItem {
-  id         String        @id @default(cuid())
+  id         String   @id @default(cuid())
   purchaseId String
   productId  String
   variantId  String?
   qty        Int
-  unitCost   Decimal       @db.Decimal(10, 2)
-  total      Decimal       @db.Decimal(10, 2)
-  received   Int           @default(0)
-  createdAt  DateTime      @default(now())
+  unitCost   Decimal  @db.Decimal(10, 2)
+  total      Decimal  @db.Decimal(10, 2)
+  received   Int      @default(0)
+  createdAt  DateTime @default(now())
 
   purchase PurchaseOrder @relation(fields: [purchaseId], references: [id], onDelete: Cascade)
   product  Product       @relation(fields: [productId], references: [id])
@@ -931,7 +939,7 @@ model PurchaseOrderItem {
 }
 
 // ============================================
-// BANNER (Homepage / category / popup)
+// BANNER
 // ============================================
 
 enum BannerPosition {
@@ -978,19 +986,19 @@ enum ReviewStatus {
 }
 
 model Review {
-  id         String        @id @default(cuid())
-  productId  String
-  userId     String?
-  name       String
-  rating     Int
-  comment    String?       @db.Text
-  images     Json          @default("[]")
-  approved   Boolean       @default(false)  // legacy — keep for migration
-  status     ReviewStatus  @default(PENDING)
-  reply      String?       @db.Text
-  repliedAt  DateTime?
-  createdAt  DateTime      @default(now())
-  updatedAt  DateTime      @updatedAt
+  id        String       @id @default(cuid())
+  productId String
+  userId    String?
+  name      String
+  rating    Int
+  comment   String?      @db.Text
+  images    Json         @default("[]")
+  approved  Boolean      @default(false)
+  status    ReviewStatus @default(PENDING)
+  reply     String?      @db.Text
+  repliedAt DateTime?
+  createdAt DateTime     @default(now())
+  updatedAt DateTime     @updatedAt
 
   product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
   user    User?   @relation(fields: [userId], references: [id])
@@ -1051,7 +1059,7 @@ model Notification {
 }
 
 // ============================================
-// STAFF REPORT (issue reporting)
+// STAFF REPORT
 // ============================================
 
 enum ReportType {
@@ -1102,7 +1110,7 @@ model StaffReport {
 }
 
 // ============================================
-// AUDIT LOG (every admin/staff action)
+// AUDIT LOG
 // ============================================
 
 model AuditLog {
@@ -1123,7 +1131,7 @@ model AuditLog {
 }
 
 // ============================================
-// SETTINGS (key-value store)
+// SETTINGS
 // ============================================
 
 model Setting {
@@ -1133,39 +1141,36 @@ model Setting {
 }
 
 // ============================================
-// COURIER (Pathao, RedX, Steadfast, etc.)
+// COURIER
 // ============================================
 
 model Courier {
-  id          String   @id @default(cuid())
-  name        String
-  slug        String   @unique
-  logo        String?
-  phone       String?
-  email       String?
-  website     String?
+  id      String  @id @default(cuid())
+  name    String
+  slug    String  @unique
+  logo    String?
+  phone   String?
+  email   String?
+  website String?
 
-  // API credentials (encrypted at rest)
-  apiBaseUrl  String?
-  apiKey      String?
-  apiSecret   String?
-  apiToken    String?  @db.Text
+  apiBaseUrl        String?
+  apiKey            String?
+  apiSecret         String?
+  apiToken          String?   @db.Text
   apiTokenExpiresAt DateTime?
 
-  // Settings
-  active      Boolean  @default(true)
-  isDefault   Boolean  @default(false)
-  codEnabled  Boolean  @default(true)
+  active        Boolean @default(true)
+  isDefault     Boolean @default(false)
+  codEnabled    Boolean @default(true)
   codFeePercent Decimal @default(1) @db.Decimal(5, 2)
-  codFeeFixed Decimal  @default(0) @db.Decimal(10, 2)
+  codFeeFixed   Decimal @default(0) @db.Decimal(10, 2)
 
-  // Business
   contactPerson String?
   paymentCycle  String?
-  notes       String?  @db.Text
+  notes         String? @db.Text
 
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   orders      Order[]             @relation("OrderCourier")
   rates       CourierRate[]
@@ -1178,25 +1183,25 @@ model Courier {
 }
 
 // ============================================
-// COURIER RATE (per district + weight)
+// COURIER RATE
 // ============================================
 
 model CourierRate {
-  id           String   @id @default(cuid())
-  courierId    String
-  district     String
-  weightUpTo   Decimal  @default(0.5) @db.Decimal(5, 2)
+  id         String  @id @default(cuid())
+  courierId  String
+  district   String
+  weightUpTo Decimal @default(0.5) @db.Decimal(5, 2)
 
-  deliveryFee  Decimal  @db.Decimal(10, 2)
-  extraPerKg   Decimal  @default(0) @db.Decimal(10, 2)
-  codFee       Decimal  @default(0) @db.Decimal(10, 2)
-  returnFee    Decimal  @db.Decimal(10, 2)
+  deliveryFee Decimal @db.Decimal(10, 2)
+  extraPerKg  Decimal @default(0) @db.Decimal(10, 2)
+  codFee      Decimal @default(0) @db.Decimal(10, 2)
+  returnFee   Decimal @db.Decimal(10, 2)
 
-  active       Boolean  @default(true)
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
-  courier      Courier  @relation(fields: [courierId], references: [id], onDelete: Cascade)
+  courier Courier @relation(fields: [courierId], references: [id], onDelete: Cascade)
 
   @@unique([courierId, district, weightUpTo])
   @@index([courierId])
@@ -1204,7 +1209,7 @@ model CourierRate {
 }
 
 // ============================================
-// COURIER SETTLEMENT (COD reconciliation)
+// COURIER SETTLEMENT
 // ============================================
 
 enum SettlementStatus {
@@ -1215,31 +1220,31 @@ enum SettlementStatus {
 }
 
 model CourierSettlement {
-  id            String            @id @default(cuid())
-  settlementNo  String            @unique
-  courierId     String
+  id           String @id @default(cuid())
+  settlementNo String @unique
+  courierId    String
 
-  periodFrom    DateTime
-  periodTo      DateTime
+  periodFrom DateTime
+  periodTo   DateTime
 
-  grossCOD      Decimal           @db.Decimal(10, 2)
-  deliveryFees  Decimal           @db.Decimal(10, 2)
-  codFees       Decimal           @db.Decimal(10, 2)
-  returnFees    Decimal           @db.Decimal(10, 2)
-  otherDeductions Decimal         @default(0) @db.Decimal(10, 2)
-  netPayout     Decimal           @db.Decimal(10, 2)
+  grossCOD        Decimal @db.Decimal(10, 2)
+  deliveryFees    Decimal @db.Decimal(10, 2)
+  codFees         Decimal @db.Decimal(10, 2)
+  returnFees      Decimal @db.Decimal(10, 2)
+  otherDeductions Decimal @default(0) @db.Decimal(10, 2)
+  netPayout       Decimal @db.Decimal(10, 2)
 
-  status        SettlementStatus  @default(PENDING)
-  paidAt        DateTime?
-  paidBy        String?
-  reference     String?
-  notes         String?           @db.Text
+  status    SettlementStatus @default(PENDING)
+  paidAt    DateTime?
+  paidBy    String?
+  reference String?
+  notes     String?          @db.Text
 
-  createdAt     DateTime          @default(now())
-  updatedAt     DateTime          @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
-  courier       Courier           @relation(fields: [courierId], references: [id])
-  orders        Order[]           @relation("SettlementOrders")
+  courier Courier @relation(fields: [courierId], references: [id])
+  orders  Order[] @relation("SettlementOrders")
 
   @@index([courierId, status])
   @@index([periodFrom, periodTo])
@@ -1261,28 +1266,28 @@ enum CourierReturnReason {
 }
 
 model CourierReturn {
-  id              String              @id @default(cuid())
-  orderId         String              @unique
-  courierId       String
-  consignmentId   String?
+  id            String  @id @default(cuid())
+  orderId       String  @unique
+  courierId     String
+  consignmentId String?
 
-  reason          CourierReturnReason
-  reasonNote      String?             @db.Text
+  reason     CourierReturnReason
+  reasonNote String?             @db.Text
 
-  outboundFee     Decimal             @default(0) @db.Decimal(10, 2)
-  returnFee       Decimal             @default(0) @db.Decimal(10, 2)
-  totalLoss       Decimal             @default(0) @db.Decimal(10, 2)
+  outboundFee Decimal @default(0) @db.Decimal(10, 2)
+  returnFee   Decimal @default(0) @db.Decimal(10, 2)
+  totalLoss   Decimal @default(0) @db.Decimal(10, 2)
 
-  receivedAt      DateTime?
-  receivedBy      String?
-  inspectionNote  String?             @db.Text
-  itemsRestocked  Boolean             @default(false)
+  receivedAt     DateTime?
+  receivedBy     String?
+  inspectionNote String?   @db.Text
+  itemsRestocked Boolean   @default(false)
 
-  createdAt       DateTime            @default(now())
-  updatedAt       DateTime            @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
-  order           Order               @relation(fields: [orderId], references: [id])
-  courier         Courier             @relation(fields: [courierId], references: [id])
+  order   Order   @relation(fields: [orderId], references: [id])
+  courier Courier @relation(fields: [courierId], references: [id])
 
   @@index([courierId])
   @@index([reason])

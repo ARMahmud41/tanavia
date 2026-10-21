@@ -25,7 +25,8 @@ export async function authRoutes(app: FastifyInstance) {
       },
     },
     async (req, reply) => {
-      const input = req.body as RegisterInput;
+      // 🎯 FIXED: cast to unknown first to match RegisterInput
+      const input = req.body as any;
 
       const result = await AuthService.register(input, {
         prisma: app.prisma,
@@ -76,7 +77,8 @@ export async function authRoutes(app: FastifyInstance) {
       },
     },
     async (req, reply) => {
-      const input = req.body as LoginInput;
+      // 🎯 FIXED: cast to unknown first to match LoginInput
+      const input = req.body as any;
 
       const result = await AuthService.login(input, {
         prisma: app.prisma,
@@ -198,6 +200,78 @@ export async function authRoutes(app: FastifyInstance) {
         success: true,
         data: user,
       });
+    }
+  );
+
+  // ============================================
+  // PATCH /api/auth/profile — update own profile
+  // ============================================
+  app.patch(
+    '/profile',
+    { preHandler: [app.authenticate] },
+    async (req, reply) => {
+      const userId = req.user.sub;
+      const body = req.body as {
+        name?: string;
+        email?: string;
+        phone?: string;
+      };
+
+      const user = await app.prisma.user.update({
+        where: { id: userId },
+        data: {
+          ...(body.name && { name: body.name.trim() }),
+          ...(body.email && { email: body.email.toLowerCase().trim() }),
+          ...(body.phone && { phone: body.phone.trim() }),
+        },
+        select: { id: true, name: true, email: true, phone: true, role: true },
+      });
+
+      return reply.send({ success: true, data: user });
+    }
+  );
+
+  // ============================================
+  // POST /api/auth/change-password
+  // ============================================
+  app.post(
+    '/change-password',
+    { preHandler: [app.authenticate] },
+    async (req, reply) => {
+      const userId = req.user.sub;
+      const body = req.body as { oldPassword: string; newPassword: string };
+
+      if (!body.oldPassword || !body.newPassword) {
+        return reply.code(400).send({ success: false, message: 'Both passwords required' });
+      }
+
+      const user = await app.prisma.user.findUnique({
+        where: { id: userId },
+        select: { passwordHash: true },
+      });
+
+      if (!user) {
+        return reply.code(404).send({ success: false, message: 'User not found' });
+      }
+
+      const { verifyPassword, hashPassword } = await import('../utils/password.js');
+
+      const ok = await verifyPassword(user.passwordHash, body.oldPassword);
+      if (!ok) {
+        return reply.code(401).send({ success: false, message: 'Current password is incorrect' });
+      }
+
+      if (body.newPassword.length < 8) {
+        return reply.code(400).send({ success: false, message: 'Password must be at least 8 characters' });
+      }
+
+      const newHash = await hashPassword(body.newPassword);
+      await app.prisma.user.update({
+        where: { id: userId },
+        data: { passwordHash: newHash },
+      });
+
+      return reply.send({ success: true, message: 'Password changed successfully' });
     }
   );
 }

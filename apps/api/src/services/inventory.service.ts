@@ -81,15 +81,15 @@ export class InventoryService {
 
     const where: Prisma.VariantWhereInput = {};
 
-    // Search
+    // Search — MySQL is case-insensitive by default (utf8mb4_unicode_ci)
     if (filters.search) {
       const q = filters.search.trim();
       where.OR = [
-        { sku: { contains: q, mode: 'insensitive' } },
-        { barcode: { contains: q, mode: 'insensitive' } },
-        { size: { contains: q, mode: 'insensitive' } },
-        { color: { contains: q, mode: 'insensitive' } },
-        { product: { name: { contains: q, mode: 'insensitive' } } },
+        { sku: { contains: q } },
+        { barcode: { contains: q } },
+        { size: { contains: q } },
+        { color: { contains: q } },
+        { product: { name: { contains: q } } },
       ];
     }
 
@@ -97,9 +97,6 @@ export class InventoryService {
     if (filters.categoryId) {
       where.product = { categoryId: filters.categoryId };
     }
-
-    // Note: status filtering (LOW / OUT) must be done post-query
-    // because it depends on `available = qty - reserved`
 
     // Sort
     let orderBy: Prisma.VariantOrderByWithRelationInput[] = [
@@ -202,7 +199,6 @@ export class InventoryService {
   ) {
     const isAdmin = options.role === 'ADMIN';
 
-    // Fetch all variants with qty, reserved, cost
     const variants = await prisma.variant.findMany({
       select: { qty: true, reserved: true, reorderLevel: true, cost: true, id: true },
     });
@@ -234,12 +230,10 @@ export class InventoryService {
     };
 
     if (isAdmin) {
-      // Dead stock value: no sales in 60 days (approximation — simplified)
-      // For now, we'll skip precise dead stock — can add later
       return {
         ...base,
         stockValue,
-        deadStockValue: 0, // TODO: compute properly
+        deadStockValue: 0,
       };
     }
 
@@ -369,7 +363,6 @@ export class InventoryService {
   // Valuation (ADMIN)
   // ============================================
   static async valuation(prisma: PrismaClient) {
-    // All variants with cost
     const variants = await prisma.variant.findMany({
       select: {
         id: true,
@@ -505,7 +498,6 @@ export class InventoryService {
       return avail <= v.reorderLevel;
     });
 
-    // Compute sold30 for each (admin only)
     const enriched = await Promise.all(
       filtered.map(async (v) => {
         const onHand = v.qty;
@@ -517,7 +509,6 @@ export class InventoryService {
         const thirtyDaysAgo = new Date();
         thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
 
-        // Sold in last 30 days
         const sold30Agg = await prisma.orderItem.aggregate({
           where: {
             productId: v.product.id,
@@ -532,7 +523,6 @@ export class InventoryService {
         });
         const sold30 = sold30Agg._sum.qty || 0;
 
-        // On order
         const onOrderAgg = await prisma.purchaseOrderItem.aggregate({
           where: {
             variantId: v.id,
@@ -564,9 +554,8 @@ export class InventoryService {
         };
 
         if (isAdmin) {
-          // Suggested: ceil(sold30/30 * 21) - available - onOrder, min 0
           const dailySales = sold30 / 30;
-          const targetStock = Math.ceil(dailySales * 21); // 21 = 7d delivery + 14d cover
+          const targetStock = Math.ceil(dailySales * 21);
           const suggested = Math.max(0, targetStock - available - onOrder);
           return { ...base, suggested };
         }
@@ -575,7 +564,6 @@ export class InventoryService {
       })
     );
 
-    // Sort by urgency
     enriched.sort((a, b) => {
       const s = (x: string) => (x === 'OUT' ? 0 : 1);
       if (s(a.status) !== s(b.status)) return s(a.status) - s(b.status);
@@ -605,10 +593,10 @@ export class InventoryService {
       throw new BadRequestError('Note is required for removing more than 5');
 
     return prisma.$transaction(async (tx) => {
-      // Row lock
+      // Row lock — MySQL backtick syntax
       const variant = await tx.$queryRaw<
         Array<{ id: string; qty: number; reserved: number }>
-      >`SELECT id, qty, reserved FROM "Variant" WHERE id = ${variantId} FOR UPDATE`;
+      >`SELECT id, qty, reserved FROM \`Variant\` WHERE id = ${variantId} FOR UPDATE`;
 
       if (!variant || variant.length === 0) {
         throw new NotFoundError('Variant not found');
@@ -629,6 +617,12 @@ export class InventoryService {
         );
       }
 
+      // Get productId for movement log
+      const currentVariant = await tx.variant.findUnique({
+        where: { id: variantId },
+        select: { productId: true },
+      });
+
       // Update variant
       await tx.variant.update({
         where: { id: variantId },
@@ -638,10 +632,7 @@ export class InventoryService {
       // Stock movement log
       await tx.stockMovement.create({
         data: {
-          productId: (await tx.variant.findUnique({
-            where: { id: variantId },
-            select: { productId: true },
-          }))!.productId,
+          productId: currentVariant!.productId,
           variantId,
           type: 'ADJUSTMENT',
           qty: change,
@@ -713,10 +704,10 @@ export class InventoryService {
       for (const entry of entries) {
         if (!entry.variantId) continue;
 
-        // Row lock
+        // Row lock — MySQL backtick syntax
         const locked = await tx.$queryRaw<
           Array<{ id: string; qty: number; reserved: number; productId: string }>
-        >`SELECT id, qty, reserved, "productId" FROM "Variant" WHERE id = ${entry.variantId} FOR UPDATE`;
+        >`SELECT id, qty, reserved, \`productId\` FROM \`Variant\` WHERE id = ${entry.variantId} FOR UPDATE`;
 
         if (!locked || locked.length === 0) continue;
 

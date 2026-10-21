@@ -53,11 +53,10 @@ interface Props {
 }
 
 export function ProductView({ product }: Props) {
-  const [selectedColor, setSelectedColor] = useState<string>(
-    product.variants?.[0]?.color || ''
-  );
+  // Start with NO color selected (show all images)
+  const [selectedColor, setSelectedColor] = useState<string | null>(null);
 
-  // Normalize images
+  // Normalize ALL images (from either productImages or images)
   const allImages = useMemo(() => {
     if (product.productImages?.length) {
       return product.productImages.map((img) => img.url);
@@ -65,48 +64,35 @@ export function ProductView({ product }: Props) {
     return product.images || [];
   }, [product.productImages, product.images]);
 
-  // Filter images by color
+  // Filter images by color (smart logic - main image first)
   const filteredImages = useMemo(() => {
-    if (!selectedColor || allImages.length === 0) return allImages;
-
-    const imgs = product.productImages || [];
-
-    if (imgs.length > 0) {
-      const hasAnyColor = imgs.some(
-        (i) => i.color && i.color.trim() !== ''
-      );
-
-      if (hasAnyColor) {
-        const colorSpecific = imgs.filter(
-          (i) => i.color === selectedColor
-        );
-        const fallback = imgs.filter(
-          (i) => !i.color || i.color.trim() === ''
-        );
-
-        if (colorSpecific.length > 0) {
-          const combined = [...colorSpecific, ...fallback];
-          const seen = new Set<string>();
-          return combined
-            .filter((i) => {
-              if (seen.has(i.url)) return false;
-              seen.add(i.url);
-              return true;
-            })
-            .map((i) => i.url);
-        }
-
-        if (fallback.length > 0) {
-          return fallback.map((i) => i.url);
-        }
-      }
+    // If no color selected, show all images
+    if (!selectedColor) {
+      return allImages;
     }
 
-    const lower = selectedColor.toLowerCase();
-    const matches = allImages.filter((u) =>
-      u.toLowerCase().includes(lower)
-    );
-    return matches.length > 0 ? matches : allImages;
+    // Try to find color-specific images
+    let colorSpecific: string[] = [];
+    if (product.productImages?.length) {
+      colorSpecific = product.productImages
+        .filter(
+          (img) =>
+            img.color &&
+            img.color.toLowerCase().trim() === selectedColor.toLowerCase().trim()
+        )
+        .map((img) => img.url);
+    }
+
+    // If color-specific images exist, put them FIRST, then add the rest
+    if (colorSpecific.length > 0) {
+      const otherImages = allImages.filter(
+        (url) => !colorSpecific.includes(url)
+      );
+      return [...colorSpecific, ...otherImages];
+    }
+
+    // If no color-specific images found, show all
+    return allImages;
   }, [allImages, selectedColor, product.productImages]);
 
   const finalPrice =
@@ -119,9 +105,8 @@ export function ProductView({ product }: Props) {
   const categoryName =
     typeof product.category === 'string'
       ? product.category
-      : product.category?.nameBn || product.category?.name || '';
+      : product.category?.name || '';
 
-  // AddToCartButton needs full product object
   const cartProduct = {
     id: product.id,
     name: product.name,
@@ -182,20 +167,15 @@ export function ProductView({ product }: Props) {
 
         {product.freeDelivery && (
           <div className="relative mb-5 overflow-hidden rounded-lg bg-emerald-600 shadow-[0_6px_20px_rgba(16,185,129,0.35)]">
-            {/* Animated shine */}
             <div className="absolute inset-0 -translate-x-full animate-[shimmer_2.8s_infinite] bg-gradient-to-r from-transparent via-white/50 to-transparent" />
-            {/* Content */}
             <div className="relative flex items-center gap-3 px-4 py-3.5 sm:px-5 sm:py-4">
-              {/* Lightning icon */}
               <svg
                 width="26"
                 height="26"
                 viewBox="0 0 24 24"
                 fill="white"
                 className="flex-shrink-0 sm:w-7 sm:h-7"
-                style={{
-                  filter: 'drop-shadow(0 0 4px rgba(255,255,255,0.6))',
-                }}
+                style={{ filter: 'drop-shadow(0 0 4px rgba(255,255,255,0.6))' }}
               >
                 <path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z" />
               </svg>
@@ -211,11 +191,11 @@ export function ProductView({ product }: Props) {
           </div>
         )}
 
-        {/* Add to cart — has its own color + size picker */}
+        {/* Add to cart */}
         <AddToCartButton
           product={cartProduct}
-          externalColor={selectedColor}
-          onColorChange={setSelectedColor}
+          externalColor={selectedColor || undefined}
+          onColorChange={(color) => setSelectedColor(color)}
         />
 
         {/* WhatsApp */}

@@ -1,54 +1,34 @@
 import type { FastifyInstance } from 'fastify';
 import { CustomerService } from '../services/customer.service.js';
 import { requireAdmin, requireStaff } from '../middleware/require-role.js';
+import { validate } from '../middleware/validate.js';
 
 export async function customerRoutes(app: FastifyInstance) {
   // ============================================
-  // GET /api/customers — list (role-aware)
+  // GET /api/customers
   // ============================================
   app.get(
     '/',
-    { preHandler: [app.authenticate, requireStaff] },
+    { preHandler: [app.authenticate] },
     async (req, reply) => {
+      const q = req.query as any;
       const user = req.user as any;
-      const q = req.query as Record<string, string | undefined>;
+      const isAdmin = user?.role === 'ADMIN';
 
-      const result = await CustomerService.list(
+      const data = await CustomerService.list(
         {
           search: q.q,
           segment: q.segment,
-          sort: q.sort as any,
+          source: q.source,
+          sort: q.sort,
           page: q.page ? Number(q.page) : 1,
           limit: q.limit ? Number(q.limit) : 25,
-          role: user.role,
+          role: isAdmin ? 'ADMIN' : 'STAFF',
         },
         app.prisma
       );
-
-      return reply.send({
-        success: true,
-        data: result.items,
-        pagination: result.pagination,
-      });
-    }
-  );
-
-  // ============================================
-  // GET /api/customers/segment-counts
-  // ============================================
-  app.get(
-    '/segment-counts',
-    { preHandler: [app.authenticate, requireStaff] },
-    async (req, reply) => {
-      const user = req.user as any;
-      const q = req.query as Record<string, string | undefined>;
-
-      const counts = await CustomerService.segmentCounts(
-        { search: q.q, role: user.role },
-        app.prisma
-      );
-
-      return reply.send({ success: true, data: counts });
+      // 🟢 data হিসেবে র‍্যাপ করা হলো
+      return reply.send({ success: true, data });
     }
   );
 
@@ -57,67 +37,77 @@ export async function customerRoutes(app: FastifyInstance) {
   // ============================================
   app.get(
     '/stats',
-    { preHandler: [app.authenticate, requireStaff] },
+    { preHandler: [app.authenticate] },
     async (req, reply) => {
       const user = req.user as any;
+      const isAdmin = user?.role === 'ADMIN';
 
-      const result = await CustomerService.stats(
-        { role: user.role },
+      const data = await CustomerService.stats(
+        { role: isAdmin ? 'ADMIN' : 'STAFF' },
         app.prisma
       );
-
-      return reply.send({ success: true, data: result });
+      return reply.send({ success: true, data });
     }
   );
 
   // ============================================
-  // GET /api/customers/export — CSV (ADMIN)
+  // GET /api/customers/segment-counts
+  // ============================================
+  app.get(
+    '/segment-counts',
+    { preHandler: [app.authenticate] },
+    async (req, reply) => {
+      const user = req.user as any;
+      const isAdmin = user?.role === 'ADMIN';
+      const q = req.query as any;
+
+      const data = await CustomerService.segmentCounts(
+        { search: q.q, role: isAdmin ? 'ADMIN' : 'STAFF' },
+        app.prisma
+      );
+      return reply.send({ success: true, data });
+    }
+  );
+
+  // ============================================
+  // GET /api/customers/analytics
+  // ============================================
+  app.get(
+    '/analytics',
+    { preHandler: [app.authenticate, requireAdmin] },
+    async (_req, reply) => {
+      const data = await CustomerService.getAnalytics(app.prisma);
+      return reply.send({ success: true, data });
+    }
+  );
+
+  // ============================================
+  // GET /api/customers/export
   // ============================================
   app.get(
     '/export',
     { preHandler: [app.authenticate, requireAdmin] },
     async (req, reply) => {
+      const q = req.query as any;
       const user = req.user as any;
-      const q = req.query as Record<string, string | undefined>;
 
       const csv = await CustomerService.exportCsv(
         {
           search: q.q,
           segment: q.segment,
-          sort: q.sort as any,
+          source: q.source,
+          sort: q.sort,
         },
         app.prisma,
-        user.sub
+        user.id
       );
 
-      const filename = `tanavia-customers-${new Date().toISOString().split('T')[0]}.csv`;
-
-      return reply
-        .header('Content-Type', 'text/csv; charset=utf-8')
-        .header('Content-Disposition', `attachment; filename="${filename}"`)
-        .send(csv);
-    }
-  );
-
-  // ============================================
-  // POST /api/customers — create
-  // ============================================
-  app.post(
-    '/',
-    { preHandler: [app.authenticate, requireStaff] },
-    async (req, reply) => {
-      const body = req.body as {
-        name: string;
-        phone: string;
-        email?: string;
-      };
-
-      const customer = await CustomerService.create(body, app.prisma);
-
-      return reply.code(201).send({
-        success: true,
-        data: customer,
-      });
+      reply.header('Content-Type', 'text/csv');
+      reply.header(
+        'Content-Disposition',
+        `attachment; filename="customers-${new Date().toISOString().slice(0, 10)}.csv"`
+      );
+      return reply.send(csv);
     }
   );
 
@@ -126,21 +116,47 @@ export async function customerRoutes(app: FastifyInstance) {
   // ============================================
   app.get(
     '/:id',
-    { preHandler: [app.authenticate, requireStaff] },
+    { preHandler: [app.authenticate] },
     async (req, reply) => {
       const { id } = req.params as { id: string };
       const user = req.user as any;
+      const isAdmin = user?.role === 'ADMIN';
 
-      const customer = await CustomerService.getById(id, app.prisma, {
-        role: user.role,
+      const data = await CustomerService.getById(id, app.prisma, {
+        role: isAdmin ? 'ADMIN' : 'STAFF',
       });
-
-      return reply.send({ success: true, data: customer });
+      return reply.send({ success: true, data });
     }
   );
 
   // ============================================
-  // PATCH /api/customers/:id — update (ADMIN)
+  // GET /api/customers/:id/addresses
+  // ============================================
+  app.get(
+    '/:id/addresses',
+    { preHandler: [app.authenticate] },
+    async (req, reply) => {
+      const { id } = req.params as { id: string };
+      const data = await CustomerService.getAddresses(id, app.prisma);
+      return reply.send({ success: true, data });
+    }
+  );
+
+  // ============================================
+  // POST /api/customers
+  // ============================================
+  app.post(
+    '/',
+    { preHandler: [app.authenticate, requireAdmin] },
+    async (req, reply) => {
+      const body = req.body as any;
+      const data = await CustomerService.create(body, app.prisma);
+      return reply.code(201).send({ success: true, data });
+    }
+  );
+
+  // ============================================
+  // PATCH /api/customers/:id
   // ============================================
   app.patch(
     '/:id',
@@ -148,15 +164,13 @@ export async function customerRoutes(app: FastifyInstance) {
     async (req, reply) => {
       const { id } = req.params as { id: string };
       const body = req.body as any;
-
-      const customer = await CustomerService.update(id, body, app.prisma);
-
-      return reply.send({ success: true, data: customer });
+      const data = await CustomerService.update(id, body, app.prisma);
+      return reply.send({ success: true, data });
     }
   );
 
   // ============================================
-  // POST /api/customers/:id/block (ADMIN)
+  // POST /api/customers/:id/block
   // ============================================
   app.post(
     '/:id/block',
@@ -166,155 +180,44 @@ export async function customerRoutes(app: FastifyInstance) {
       const { reason } = req.body as { reason: string };
       const user = req.user as any;
 
-      const customer = await CustomerService.block(
-        id,
-        reason,
-        app.prisma,
-        user.sub
-      );
-
-      return reply.send({ success: true, data: customer });
+      const data = await CustomerService.block(id, reason, app.prisma, user.id);
+      return reply.send({ success: true, data });
     }
   );
 
   // ============================================
-  // POST /api/customers/:id/unblock (ADMIN)
+  // POST /api/customers/:id/unblock
   // ============================================
   app.post(
     '/:id/unblock',
     { preHandler: [app.authenticate, requireAdmin] },
     async (req, reply) => {
       const { id } = req.params as { id: string };
-      const { reason } = req.body as { reason?: string };
       const user = req.user as any;
 
-      const customer = await CustomerService.unblock(
-        id,
-        app.prisma,
-        user.sub,
-        reason
-      );
-
-      return reply.send({ success: true, data: customer });
+      const data = await CustomerService.unblock(id, app.prisma, user.id);
+      return reply.send({ success: true, data });
     }
   );
 
   // ============================================
-  // GET /api/customers/:id/orders
-  // ============================================
-  app.get(
-    '/:id/orders',
-    { preHandler: [app.authenticate, requireStaff] },
-    async (req, reply) => {
-      const { id } = req.params as { id: string };
-
-      const orders = await CustomerService.getOrders(id, app.prisma);
-
-      return reply.send({ success: true, data: orders });
-    }
-  );
-
-  // ============================================
-  // GET /api/customers/:id/returns
-  // ============================================
-  app.get(
-    '/:id/returns',
-    { preHandler: [app.authenticate, requireStaff] },
-    async (req, reply) => {
-      const { id } = req.params as { id: string };
-      const user = req.user as any;
-
-      const returns = await CustomerService.getReturns(id, app.prisma, {
-        role: user.role,
-      });
-
-      return reply.send({ success: true, data: returns });
-    }
-  );
-
-  // ============================================
-  // GET /api/customers/:id/addresses
-  // ============================================
-  app.get(
-    '/:id/addresses',
-    { preHandler: [app.authenticate, requireStaff] },
-    async (req, reply) => {
-      const { id } = req.params as { id: string };
-
-      const addresses = await CustomerService.getAddresses(id, app.prisma);
-
-      return reply.send({ success: true, data: addresses });
-    }
-  );
-
-  // ============================================
-  // POST /api/customers/:id/notes — add note (STAFF + ADMIN)
+  // POST /api/customers/:id/notes
   // ============================================
   app.post(
     '/:id/notes',
-    { preHandler: [app.authenticate, requireStaff] },
+    { preHandler: [app.authenticate, requireAdmin] },
     async (req, reply) => {
       const { id } = req.params as { id: string };
       const { text } = req.body as { text: string };
       const user = req.user as any;
 
-      const note = await CustomerService.addNote(
-        id,
-        text,
-        app.prisma,
-        user.sub
-      );
-
-      return reply.code(201).send({ success: true, data: note });
+      const data = await CustomerService.addNote(id, text, app.prisma, user.id);
+      return reply.code(201).send({ success: true, data });
     }
   );
 
   // ============================================
-  // PATCH /api/customers/:id/notes/:noteId — pin (ADMIN)
-  // ============================================
-  app.patch(
-    '/:id/notes/:noteId',
-    { preHandler: [app.authenticate, requireAdmin] },
-    async (req, reply) => {
-      const { id, noteId } = req.params as { id: string; noteId: string };
-      const { pinned } = req.body as { pinned: boolean };
-      const user = req.user as any;
-
-      const note = await CustomerService.pinNote(
-        id,
-        noteId,
-        !!pinned,
-        app.prisma,
-        user.sub
-      );
-
-      return reply.send({ success: true, data: note });
-    }
-  );
-
-  // ============================================
-  // DELETE /api/customers/:id/notes/:noteId (ADMIN)
-  // ============================================
-  app.delete(
-    '/:id/notes/:noteId',
-    { preHandler: [app.authenticate, requireAdmin] },
-    async (req, reply) => {
-      const { id, noteId } = req.params as { id: string; noteId: string };
-      const user = req.user as any;
-
-      const result = await CustomerService.deleteNote(
-        id,
-        noteId,
-        app.prisma,
-        user.sub
-      );
-
-      return reply.send({ success: true, data: result });
-    }
-  );
-
-  // ============================================
-  // POST /api/customers/:id/tags (ADMIN)
+  // POST /api/customers/:id/tags
   // ============================================
   app.post(
     '/:id/tags',
@@ -324,19 +227,13 @@ export async function customerRoutes(app: FastifyInstance) {
       const { tag } = req.body as { tag: string };
       const user = req.user as any;
 
-      const created = await CustomerService.addTag(
-        id,
-        tag,
-        app.prisma,
-        user.sub
-      );
-
-      return reply.code(201).send({ success: true, data: created });
+      const data = await CustomerService.addTag(id, tag, app.prisma, user.id);
+      return reply.code(201).send({ success: true, data });
     }
   );
 
   // ============================================
-  // DELETE /api/customers/:id/tags/:tag (ADMIN)
+  // DELETE /api/customers/:id/tags/:tag
   // ============================================
   app.delete(
     '/:id/tags/:tag',
@@ -345,14 +242,8 @@ export async function customerRoutes(app: FastifyInstance) {
       const { id, tag } = req.params as { id: string; tag: string };
       const user = req.user as any;
 
-      const result = await CustomerService.removeTag(
-        id,
-        tag,
-        app.prisma,
-        user.sub
-      );
-
-      return reply.send({ success: true, data: result });
+      const data = await CustomerService.removeTag(id, tag, app.prisma, user.id);
+      return reply.send({ success: true, data });
     }
   );
 }

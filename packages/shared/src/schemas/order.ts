@@ -9,16 +9,28 @@ export const PlaceOrderItemSchema = z.object({
 });
 
 export const PlaceOrderSchema = z.object({
-  customerName: z.string().min(3).max(100),
-  customerPhone: z.string().regex(/^01[3-9]\d{8}$/, 'Sothik 11 digit mobile number din'),
-  customerEmail: z.string().email().optional(),
-  address: z.string().min(10).max(500),
-  district: z.enum([...BD_DISTRICTS] as [string, ...string[]]),
-  note: z.string().max(300).optional(),
-  paymentMethod: z.enum([...PAYMENT_METHODS] as [string, ...string[]]),
-  paymentTxId: z.string().min(4).max(50).optional(),
-  couponCode: z.string().max(30).optional(),
-  items: z.array(PlaceOrderItemSchema).min(1).max(20),
+  customerName: z.string().min(2, 'Name is too short').max(100),
+  customerPhone: z.string().regex(/^01[3-9]\d{8}$/, 'Valid 11-digit phone required'),
+  customerEmail: z.string().email().optional().or(z.literal('')).nullable().optional(),
+  address: z.string().min(5, 'Address is too short').max(500),
+  
+  // 🟢 নতুন ফিল্ড
+  area: z.string().optional().nullable(),
+  district: z.string().optional().nullable(),
+  upazila: z.string().optional().nullable(),
+  
+  note: z.string().optional().nullable(),
+  paymentMethod: z.enum(['COD', 'BKASH', 'NAGAD', 'ROCKET', 'CARD']),
+  paymentTxId: z.string().optional().nullable(),
+  couponCode: z.string().optional().nullable(),
+  items: z.array(
+    z.object({
+      productId: z.string(),
+      size: z.string(),
+      color: z.string(),
+      qty: z.number().int().positive(),
+    })
+  ).min(1, 'At least one item required'),
 });
 
 export const UpdateOrderStatusSchema = z.object({

@@ -34,41 +34,50 @@ export async function staffRoutes(app: FastifyInstance) {
     }
   );
 
-  // GET /api/staff/:id — staff detail
+  // ============================================
+  // GET /api/staff/notifications — get notifications
+  // ⚠️ MUST BE BEFORE /:id ROUTE
+  // ============================================
   app.get(
-    '/:id',
-    { preHandler: [app.authenticate, requireAdmin] },
+    '/notifications',
+    { preHandler: [app.authenticate, requireStaff] },
     async (req, reply) => {
-      const { id } = req.params as { id: string };
-      const staff = await StaffService.getById(id, app.prisma);
-      return reply.send({ success: true, data: staff });
+      const user = req.user as any;
+
+      const items = await app.prisma.notification.findMany({
+        where: {
+          OR: [{ userId: user.sub }, { userId: null }],
+        },
+        orderBy: { createdAt: 'desc' },
+        take: 50,
+      });
+
+      return reply.send({ success: true, data: items });
     }
   );
 
-  // PATCH /api/staff/:id — update staff
+  // ============================================
+  // PATCH /api/staff/notifications/:id/read
+  // ⚠️ MUST BE BEFORE /:id ROUTE
+  // ============================================
   app.patch(
-    '/:id',
-    { preHandler: [app.authenticate, requireAdmin] },
+    '/notifications/:id/read',
+    { preHandler: [app.authenticate, requireStaff] },
     async (req, reply) => {
       const { id } = req.params as { id: string };
-      const staff = await StaffService.update(id, req.body as any, app.prisma);
-      return reply.send({ success: true, data: staff });
-    }
-  );
 
-  // DELETE /api/staff/:id — deactivate staff
-  app.delete(
-    '/:id',
-    { preHandler: [app.authenticate, requireAdmin] },
-    async (req, reply) => {
-      const { id } = req.params as { id: string };
-      const staff = await StaffService.deactivate(id, app.prisma);
-      return reply.send({ success: true, data: staff });
+      await app.prisma.notification.update({
+        where: { id },
+        data: { read: true },
+      });
+
+      return reply.send({ success: true });
     }
   );
 
   // ============================================
   // SHIFT MANAGEMENT (Staff+)
+  // ⚠️ MUST BE BEFORE /:id ROUTE
   // ============================================
 
   // POST /api/staff/shift/open — open shift
@@ -143,6 +152,7 @@ export async function staffRoutes(app: FastifyInstance) {
 
   // ============================================
   // STAFF REPORTS
+  // ⚠️ MUST BE BEFORE /:id ROUTE
   // ============================================
 
   // POST /api/staff/report — create report (staff)
@@ -210,6 +220,46 @@ export async function staffRoutes(app: FastifyInstance) {
         app.prisma
       );
       return reply.send({ success: true, data: report });
+    }
+  );
+
+  // ============================================
+  // STAFF DETAIL (DYNAMIC ROUTE — MUST BE LAST)
+  // ============================================
+
+  // GET /api/staff/:id — staff detail
+  app.get(
+    '/:id',
+    { preHandler: [app.authenticate, requireAdmin] },
+    async (req, reply) => {
+      const { id } = req.params as { id: string };
+      const staff = await StaffService.getById(id, app.prisma);
+      return reply.send({ success: true, data: staff });
+    }
+  );
+
+  // PATCH /api/staff/:id — update staff
+  app.patch(
+    '/:id',
+    { preHandler: [app.authenticate, requireAdmin] },
+    async (req, reply) => {
+      const { id } = req.params as { id: string };
+      
+      // The req.body will now include 'target' if sent from frontend
+      const staff = await StaffService.update(id, req.body as any, app.prisma);
+      
+      return reply.send({ success: true, data: staff });
+    }
+  );
+
+  // DELETE /api/staff/:id — deactivate staff
+  app.delete(
+    '/:id',
+    { preHandler: [app.authenticate, requireAdmin] },
+    async (req, reply) => {
+      const { id } = req.params as { id: string };
+      const staff = await StaffService.deactivate(id, app.prisma);
+      return reply.send({ success: true, data: staff });
     }
   );
 }

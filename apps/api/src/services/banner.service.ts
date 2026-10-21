@@ -66,7 +66,7 @@ export class BannerService {
       where.position = filters.position as any;
     }
     if (filters.search) {
-      where.title = { contains: filters.search.trim(), mode: 'insensitive' };
+      where.title = { contains: filters.search.trim(), };
     }
 
     return prisma.banner.findMany({

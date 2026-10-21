@@ -505,19 +505,19 @@ export class ProductService {
       const q = filters.search.trim();
       AND.push({
         OR: [
-          { name: { contains: q, mode: 'insensitive' } },
-          { nameBn: { contains: q, mode: 'insensitive' } },
-          { description: { contains: q, mode: 'insensitive' } },
-          { sku: { contains: q, mode: 'insensitive' } },
-          { barcode: { contains: q, mode: 'insensitive' } },
-          { tags: { has: q } },
+          { name: { contains: q, } },
+          { nameBn: { contains: q, } },
+          { description: { contains: q, } },
+          { sku: { contains: q, } },
+          { barcode: { contains: q, } },
+          { tags: { string_contains: q  } },
         ],
       });
     }
 
     // Special Offer filter — matches against product tags
     if (filters.offer) {
-      AND.push({ tags: { has: filters.offer } });
+      AND.push({ tags: { string_contains: filters.offer  } });
     }
 
     if (AND.length > 0) {

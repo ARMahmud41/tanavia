@@ -53,9 +53,9 @@ export class SupplierService {
     if (filters.search) {
       const q = filters.search.trim();
       where.OR = [
-        { name: { contains: q, mode: 'insensitive' } },
-        { phone: { contains: q, mode: 'insensitive' } },
-        { email: { contains: q, mode: 'insensitive' } },
+        { name: { contains: q, } },
+        { phone: { contains: q, } },
+        { email: { contains: q, } },
       ];
     }
 

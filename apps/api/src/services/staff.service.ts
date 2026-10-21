@@ -22,6 +22,7 @@ interface UpdateStaffInput {
   phone?: string;
   role?: Role;
   active?: boolean;
+  target?: number; // 🎯 স্টাফ সেলস টার্গেট
 }
 
 interface OpenShiftInput {
@@ -56,6 +57,7 @@ const STAFF_SELECT = {
   phone: true,
   role: true,
   active: true,
+  target: true,
   lastLoginAt: true,
   createdAt: true,
   updatedAt: true,
@@ -199,10 +201,13 @@ export class StaffService {
     if (input.phone !== undefined) data.phone = input.phone.trim();
     if (input.role !== undefined) data.role = input.role;
     if (input.active !== undefined) data.active = input.active;
+    if (input.target !== undefined) data.target = input.target; // 🎯 টার্গেট আপডেট
 
     const staff = await prisma.user.update({
       where: { id },
-      data,
+      data: {
+        ...data,
+      },
       select: STAFF_SELECT,
     });
 

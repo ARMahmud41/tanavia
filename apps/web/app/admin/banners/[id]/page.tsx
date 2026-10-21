@@ -5,7 +5,6 @@ import { useParams, useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import { api, ApiError } from '@/lib/api';
 import { getToken } from '@/lib/auth';
-import { formatDateTime } from '@/lib/format';
 
 const POSITIONS = [
   { value: 'HOME_HERO', label: 'Home Hero' },
@@ -66,7 +65,15 @@ export default function EditBannerPage() {
     try {
       const token = getToken() || undefined;
       const res = await api.get<Banner>(`/api/banners/${bannerId}`, { token });
-      const b = res.data;
+      const b = res.data ?? null;
+
+      if (!b) {
+        setError('Banner not found');
+        setBanner(null);
+        setLoading(false);
+        return;
+      }
+
       setBanner(b);
       setForm({
         title: b.title,
@@ -83,6 +90,7 @@ export default function EditBannerPage() {
       });
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Failed to load');
+      setBanner(null);
     } finally {
       setLoading(false);
     }
@@ -151,7 +159,10 @@ export default function EditBannerPage() {
         <div className="bg-red-50 border border-red-200 text-red-700 text-sm rounded-lg px-4 py-3 mb-4">
           {error || 'Banner not found'}
         </div>
-        <Link href="/admin/banners" className="inline-block text-sm text-[#0F2A5C] underline">
+        <Link
+          href="/admin/banners"
+          className="inline-block text-sm text-[#0F2A5C] underline"
+        >
           ← Back to banners
         </Link>
       </div>
@@ -159,7 +170,10 @@ export default function EditBannerPage() {
   }
 
   return (
-    <div className="p-4 sm:p-6 md:p-8 min-h-screen" style={{ background: '#F7F8FA' }}>
+    <div
+      className="p-4 sm:p-6 md:p-8 min-h-screen"
+      style={{ background: '#F7F8FA' }}
+    >
       <div className="flex items-center gap-3 mb-5">
         <Link
           href="/admin/banners"
@@ -229,7 +243,11 @@ export default function EditBannerPage() {
             {form.image && (
               <div className="rounded-lg border border-[#E8EBF0] overflow-hidden">
                 {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img src={form.image} alt="Preview" className="w-full h-40 object-cover" />
+                <img
+                  src={form.image}
+                  alt="Preview"
+                  className="w-full h-40 object-cover"
+                />
               </div>
             )}
             <Field
@@ -242,8 +260,16 @@ export default function EditBannerPage() {
 
         <Card title="Action">
           <div className="space-y-4">
-            <Field label="Link URL" value={form.link} onChange={(v) => update('link', v)} />
-            <Field label="CTA Button Text" value={form.ctaText} onChange={(v) => update('ctaText', v)} />
+            <Field
+              label="Link URL"
+              value={form.link}
+              onChange={(v) => update('link', v)}
+            />
+            <Field
+              label="CTA Button Text"
+              value={form.ctaText}
+              onChange={(v) => update('ctaText', v)}
+            />
           </div>
         </Card>
 
@@ -265,7 +291,12 @@ export default function EditBannerPage() {
                 ))}
               </select>
             </div>
-            <Field label="Sort Order" type="number" value={form.sortOrder} onChange={(v) => update('sortOrder', v)} />
+            <Field
+              label="Sort Order"
+              type="number"
+              value={form.sortOrder}
+              onChange={(v) => update('sortOrder', v)}
+            />
           </div>
         </Card>
 
@@ -297,7 +328,11 @@ export default function EditBannerPage() {
         </Card>
 
         <Card title="Status">
-          <Toggle label="Active" checked={form.active} onChange={(v) => update('active', v)} />
+          <Toggle
+            label="Active"
+            checked={form.active}
+            onChange={(v) => update('active', v)}
+          />
         </Card>
 
         <div className="flex flex-col-reverse sm:flex-row sm:justify-end gap-2 pb-4">
@@ -350,9 +385,11 @@ export default function EditBannerPage() {
             onClick={(e) => e.stopPropagation()}
           >
             <h2 className="font-serif text-lg font-semibold text-[#0F2A5C] mb-2">
-              Delete "{banner.title}"?
+              Delete &quot;{banner.title}&quot;?
             </h2>
-            <p className="text-sm text-[#8A8F98] mb-5">This cannot be undone.</p>
+            <p className="text-sm text-[#8A8F98] mb-5">
+              This cannot be undone.
+            </p>
             <div className="flex flex-col-reverse sm:flex-row sm:justify-end gap-2">
               <button
                 onClick={() => setShowDelete(false)}
@@ -374,7 +411,13 @@ export default function EditBannerPage() {
   );
 }
 
-function Card({ title, children }: { title: string; children: React.ReactNode }) {
+function Card({
+  title,
+  children,
+}: {
+  title: string;
+  children: React.ReactNode;
+}) {
   return (
     <div className="rounded-lg bg-white shadow-sm border border-[#E8EBF0] p-4 sm:p-5">
       <h3 className="font-semibold text-[#0F2A5C] mb-3 sm:mb-4 text-sm sm:text-base">

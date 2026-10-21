@@ -134,8 +134,8 @@ export default function StaffPOSPage() {
 
     async function pollSms() {
       if (cancelled) return;
-      if (!needsSender) return; // only when bKash/Nagad/Rocket selected
-      if (smsDetected) return; // already detected
+      if (!needsSender) return;
+      if (smsDetected) return;
 
       try {
         const res = await api.get<Array<{
@@ -152,7 +152,6 @@ export default function StaffPOSPage() {
         );
 
         if (sms && !cancelled) {
-          // Auto-fill
           setSenderNumber(sms.senderNumber);
           setTxId(sms.txId);
           setSmsDetected({
@@ -173,13 +172,12 @@ export default function StaffPOSPage() {
     }
 
     const interval = setInterval(pollSms, 5000);
-    pollSms(); // initial call
+    pollSms();
 
     return () => {
       cancelled = true;
       clearInterval(interval);
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [paymentMethod]);
 
   const needsSender =
@@ -193,7 +191,6 @@ export default function StaffPOSPage() {
   async function handleScan(code: string) {
     setScanning(true);
     try {
-      // Client-side lookup first
       const normalized = code.trim();
       let found: {
         product: ProductForPOS;
@@ -251,12 +248,22 @@ export default function StaffPOSPage() {
       return;
     }
 
+    // 🎯 FIX: Properly extract image URL from different possible structures
+    let imageUrl = null;
+    const productAny = product as any;
+    
+    if (productAny.productImages && Array.isArray(productAny.productImages) && productAny.productImages.length > 0) {
+      imageUrl = productAny.productImages[0].url;
+    } else if (productAny.images && Array.isArray(productAny.images) && productAny.images.length > 0) {
+      imageUrl = productAny.images[0];
+    }
+
     const newCart = addToPosCart({
       productId: product.id,
       variantId: variant.id,
       name: product.name,
       slug: product.slug,
-      image: product.images?.[0] || null,
+      image: imageUrl, // 🎯 Assign extracted image URL
       price: Number(product.price),
       discount: product.discount || 0,
       size: variant.size,
@@ -361,7 +368,6 @@ export default function StaffPOSPage() {
         payload.note = note.trim();
       }
 
-      // Include sender number + txId for mobile wallet payments
       if (senderNumber.trim()) {
         payload.senderNumber = senderNumber.trim();
       }
@@ -369,7 +375,6 @@ export default function StaffPOSPage() {
         payload.paymentTxId = txId.trim();
       }
 
-      // Apply discounts
       const subtotal = cart.reduce((sum, item) => {
         const finalPrice = Math.round(
           item.price * (1 - item.discount / 100)
@@ -399,7 +404,6 @@ export default function StaffPOSPage() {
           msg: `Sale completed: ${res.data.orderNumber}`,
         });
 
-        // Build receipt data BEFORE clearing cart
         const received = parseFloat(amountReceived) || 0;
         const receiptTotal = res.data.total
           ? Number(res.data.total)
@@ -430,7 +434,6 @@ export default function StaffPOSPage() {
           paymentTxId: txId.trim() || undefined,
         });
 
-        // Clear cart
         setCart([]);
         clearPosCart();
         setDiscountPct(0);
@@ -443,7 +446,6 @@ export default function StaffPOSPage() {
         setSenderNumber('');
         setSmsDetected(null);
 
-        // Mark SMS as consumed
         if (smsDetected?.id) {
           api
             .post(`/api/webhooks/sms/${smsDetected.id}/consume`, {})
@@ -501,12 +503,9 @@ export default function StaffPOSPage() {
   // ============================================
   return (
     <div className="min-h-screen">
-      {/* ============================================ */}
-      {/* Top bar                                        */}
-      {/* ============================================ */}
+      {/* Top bar */}
       <div className="staff-card border-b border-l-0 border-r-0 border-t-0 rounded-none px-5 py-3">
         <div className="flex items-center justify-between gap-4 flex-wrap">
-          {/* Left */}
           <div>
             <h1 className="font-serif text-lg font-bold text-[var(--staff-text)]">
               Point of Sale
@@ -521,7 +520,6 @@ export default function StaffPOSPage() {
             </p>
           </div>
 
-          {/* Center — today stats */}
           <div className="hidden md:flex items-center gap-6 text-xs">
             <div>
               <div className="text-[var(--staff-muted)]">Sales today</div>
@@ -539,7 +537,6 @@ export default function StaffPOSPage() {
             </div>
           </div>
 
-          {/* Right — shift status */}
           <div className="flex items-center gap-2">
             {shift && shift.status === 'OPEN' ? (
               <span className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[var(--staff-success)]/10 text-[var(--staff-success)] text-xs font-semibold border border-[var(--staff-success)]/20">
@@ -555,9 +552,7 @@ export default function StaffPOSPage() {
         </div>
       </div>
 
-      {/* ============================================ */}
-      {/* Main grid — Left (search + grid) / Right (cart + payment) */}
-      {/* ============================================ */}
+      {/* Main grid */}
       <div className="grid grid-cols-1 lg:grid-cols-[1fr_420px] gap-4 p-4">
         {/* LEFT */}
         <div className="space-y-4 min-w-0">
@@ -615,9 +610,7 @@ export default function StaffPOSPage() {
         </div>
       </div>
 
-      {/* ============================================ */}
-      {/* Receipt Modal — after successful sale        */}
-      {/* ============================================ */}
+      {/* Receipt Modal */}
       {receipt && (
         <ReceiptModal
           data={receipt}
@@ -634,9 +627,7 @@ export default function StaffPOSPage() {
         />
       )}
 
-      {/* ============================================ */}
-      {/* Toast                                          */}
-      {/* ============================================ */}
+      {/* Toast */}
       {toast && (
         <div
           className={`fixed bottom-6 left-1/2 -translate-x-1/2 z-50 px-4 py-2.5 rounded-lg shadow-lg text-sm font-medium flex items-center gap-2 ${
@@ -650,9 +641,7 @@ export default function StaffPOSPage() {
         </div>
       )}
 
-      {/* ============================================ */}
-      {/* Stock warning modal                            */}
-      {/* ============================================ */}
+      {/* Stock warning modal */}
       {warning && (
         <div
           className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50"
@@ -711,9 +700,6 @@ export default function StaffPOSPage() {
         </div>
       )}
 
-      {/* ============================================ */}
-      {/* Print-specific CSS — 80mm thermal receipt    */}
-      {/* ============================================ */}
       <style jsx global>{`
         @media print {
           body * {

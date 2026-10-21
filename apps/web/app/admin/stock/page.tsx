@@ -33,7 +33,8 @@ interface Product {
     | { id: string; name: string; nameBn?: string | null; slug: string }
     | null;
   active: boolean;
-  images: string[];
+  images?: string[];
+  productImages?: Array<{ id: string; url: string; isPrimary?: boolean }>;
   variants: Variant[];
 }
 
@@ -98,26 +99,35 @@ export default function AdminStockPage() {
   // Build product groups (parent + variants)
   // ============================================
   const groups: ProductGroup[] = useMemo(() => {
-    return products.map((p) => ({
-      productId: p.id,
-      productName: p.name,
-      sku: p.sku,
-      category:
-        typeof p.category === 'string'
-          ? p.category
-          : p.category?.name || null,
-      images: p.images || [],
-      variants: p.variants.map((v) => ({
-        id: v.id,
-        sku: v.sku,
-        barcode: v.barcode,
-        size: v.size,
-        color: v.color,
-        qty: v.qty,
-        reserved: v.reserved,
-        reorderLevel: v.reorderLevel || 5,
-      })),
-    }));
+    return products.map((p) => {
+      // Get primary image from productImages or fallback to images
+      const primaryImage =
+        p.productImages?.find((img) => img.isPrimary)?.url ||
+        p.productImages?.[0]?.url ||
+        p.images?.[0] ||
+        null;
+
+      return {
+        productId: p.id,
+        productName: p.name,
+        sku: p.sku,
+        category:
+          typeof p.category === 'string'
+            ? p.category
+            : p.category?.name || null,
+        images: primaryImage ? [primaryImage] : [],
+        variants: p.variants.map((v) => ({
+          id: v.id,
+          sku: v.sku,
+          barcode: v.barcode,
+          size: v.size,
+          color: v.color,
+          qty: v.qty,
+          reserved: v.reserved,
+          reorderLevel: v.reorderLevel || 5,
+        })),
+      };
+    });
   }, [products]);
 
   // ============================================
@@ -218,7 +228,9 @@ export default function AdminStockPage() {
         const status = getStatus(v.qty, v.reserved, v.reorderLevel);
         rows.push([
           g.productName,
-          g.category || '',
+          typeof g.category === 'string'
+            ? g.category
+            : (g.category as { name: string } | null)?.name || '',
           v.sku || '',
           v.barcode || '',
           v.size,

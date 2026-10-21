@@ -3,7 +3,6 @@
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { useState, useEffect, useRef } from 'react';
-import { CartIcon } from '@/components/CartIcon';
 import { ProfileMenu } from '@/components/ProfileMenu';
 import { AnnouncementBar } from '@/components/AnnouncementBar';
 import { ShopFooter } from '@/components/ShopFooter';
@@ -147,8 +146,8 @@ export default function ShopLayout({
   const [search, setSearch] = useState('');
   const [isSticky, setIsSticky] = useState(false);
   const [hoveredMenu, setHoveredMenu] = useState<string | null>(null);
+  const [cartCount, setCartCount] = useState(0);
 
-  // useRef instead of `let` — persists across renders, avoids stale closure issues
   const hoverTimeout = useRef<NodeJS.Timeout | null>(null);
 
   useEffect(() => {
@@ -159,17 +158,37 @@ export default function ShopLayout({
     return () => window.removeEventListener('scroll', onScroll);
   }, []);
 
-  // Cleanup timeout on unmount
   useEffect(() => {
     return () => {
       if (hoverTimeout.current) clearTimeout(hoverTimeout.current);
     };
   }, []);
 
-  // Close mega menu on route change
   useEffect(() => {
     setHoveredMenu(null);
   }, [pathname]);
+
+  useEffect(() => {
+    function updateCount() {
+      try {
+        const raw = localStorage.getItem('tanavia_cart');
+        const cart = raw ? JSON.parse(raw) : [];
+        const total = Array.isArray(cart)
+          ? cart.reduce((s: number, i: any) => s + (i.qty || 0), 0)
+          : 0;
+        setCartCount(total);
+      } catch {
+        setCartCount(0);
+      }
+    }
+    updateCount();
+    window.addEventListener('cart-change', updateCount);
+    window.addEventListener('storage', updateCount);
+    return () => {
+      window.removeEventListener('cart-change', updateCount);
+      window.removeEventListener('storage', updateCount);
+    };
+  }, []);
 
   function handleSearch(e: React.FormEvent) {
     e.preventDefault();
@@ -182,14 +201,8 @@ export default function ShopLayout({
 
   return (
     <div className="min-h-screen flex flex-col bg-white">
-      {/* ============================================ */}
-      {/* Announcement marquee */}
-      {/* ============================================ */}
       <AnnouncementBar />
 
-      {/* ============================================ */}
-      {/* Header — ALL IN ONE ROW */}
-      {/* ============================================ */}
       <header
         className={`border-b border-line bg-white sticky top-0 z-50 transition-shadow ${
           isSticky ? 'shadow-[0_2px_12px_rgba(0,0,0,0.06)]' : ''
@@ -214,7 +227,7 @@ export default function ShopLayout({
             </span>
           </Link>
 
-          {/* Desktop nav links — with mega menu */}
+          {/* Desktop nav links */}
           <nav className="hidden lg:flex items-center gap-4 xl:gap-6 text-sm flex-shrink-0">
             {NAV_LINKS.map((item) => {
               const isHome = item.href === '/';
@@ -237,9 +250,10 @@ export default function ShopLayout({
                   onMouseLeave={() => {
                     if (megaConfig) {
                       if (hoverTimeout.current) clearTimeout(hoverTimeout.current);
+                      // 🟢 টাইমআউট ৩০০ মিলিসেকেন্ড করা হলো যাতে মাউস নিচে নামাতে সময় পান
                       hoverTimeout.current = setTimeout(
                         () => setHoveredMenu(null),
-                        120
+                        300
                       );
                     }
                   }}
@@ -266,7 +280,7 @@ export default function ShopLayout({
             })}
           </nav>
 
-          {/* Search — VISIBLE ON ALL DEVICES, fills middle space */}
+          {/* Search */}
           <form
             onSubmit={handleSearch}
             className="flex flex-1 min-w-0 max-w-md ml-auto lg:ml-0"
@@ -284,7 +298,6 @@ export default function ShopLayout({
                 className="bg-wine text-white text-xs sm:text-sm font-semibold px-2.5 sm:px-5 hover:bg-wine/90 transition whitespace-nowrap flex items-center justify-center"
                 aria-label="Search"
               >
-                {/* Icon on mobile, text on desktop */}
                 <svg
                   className="sm:hidden"
                   width="15"
@@ -304,7 +317,7 @@ export default function ShopLayout({
             </div>
           </form>
 
-          {/* Desktop right actions — hidden on mobile */}
+          {/* Desktop right actions */}
           <div className="hidden lg:flex items-center gap-3 xl:gap-4 text-sm flex-shrink-0">
             <Link
               href="/track"
@@ -348,14 +361,64 @@ export default function ShopLayout({
 
             <ProfileMenu />
 
-            <div className="relative flex flex-col items-center justify-center px-2 py-1 text-xs">
-              <CartIcon />
-            </div>
+            <Link
+              href="/cart"
+              className="flex flex-col items-center justify-center px-2 py-1 text-xs text-ink hover:text-wine transition"
+              aria-label={`Cart (${cartCount} items)`}
+            >
+              <div className="relative">
+                <svg
+                  width="22"
+                  height="22"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="1.6"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                >
+                  <circle cx="9" cy="20" r="1.5" />
+                  <circle cx="18" cy="20" r="1.5" />
+                  <path d="M2 3h3l2.5 13.5a1.5 1.5 0 0 0 1.5 1.2h9.5a1.5 1.5 0 0 0 1.5-1.2L22 7H6" />
+                </svg>
+                {cartCount > 0 && (
+                  <span className="absolute -top-1.5 -right-1.5 bg-wine text-white text-[10px] font-bold rounded-full min-w-[16px] h-[16px] flex items-center justify-center px-1">
+                    {cartCount > 99 ? '99+' : cartCount}
+                  </span>
+                )}
+              </div>
+              <span className="mt-0.5 font-medium">Cart</span>
+            </Link>
           </div>
 
-          {/* Mobile right actions — cart + hamburger */}
+          {/* Mobile right actions */}
           <div className="lg:hidden flex items-center gap-0.5 flex-shrink-0">
-            <CartIcon />
+            <Link
+              href="/cart"
+              className="relative w-9 h-9 rounded-lg flex items-center justify-center hover:bg-gray-100 text-ink"
+              aria-label={`Cart (${cartCount} items)`}
+            >
+              <svg
+                width="20"
+                height="20"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                <circle cx="9" cy="20" r="1.5" />
+                <circle cx="18" cy="20" r="1.5" />
+                <path d="M2 3h3l2.5 13.5a1.5 1.5 0 0 0 1.5 1.2h9.5a1.5 1.5 0 0 0 1.5-1.2L22 7H6" />
+              </svg>
+              {cartCount > 0 && (
+                <span className="absolute top-1 right-1 bg-wine text-white text-[9px] font-bold rounded-full min-w-[14px] h-[14px] flex items-center justify-center px-0.5">
+                  {cartCount > 99 ? '99+' : cartCount}
+                </span>
+              )}
+            </Link>
+
             <button
               onClick={() => setMenuOpen((v) => !v)}
               className="w-9 h-9 rounded-lg flex items-center justify-center hover:bg-gray-100"
@@ -380,15 +443,19 @@ export default function ShopLayout({
           </div>
         </div>
 
-        {/* Mega menu — Desktop only */}
+        {/* Mega menu */}
         {hoveredMenu && MEGA_MENUS[hoveredMenu] && (
           <MegaMenu
             config={MEGA_MENUS[hoveredMenu]}
             onClose={() => setHoveredMenu(null)}
+            onMouseEnter={() => {
+              // 🟢 মাউস মেনুর ভেতরে ঢুকলে টাইমার বাতিল হবে
+              if (hoverTimeout.current) clearTimeout(hoverTimeout.current);
+            }}
           />
         )}
 
-        {/* Mobile dropdown menu */}
+        {/* Mobile dropdown */}
         {menuOpen && (
           <div className="lg:hidden border-t border-line bg-white">
             <nav className="px-4 py-3 flex flex-col gap-1 max-h-[70vh] overflow-y-auto">
@@ -429,34 +496,33 @@ export default function ShopLayout({
         )}
       </header>
 
-      {/* ============================================ */}
-      {/* Main content */}
-      {/* ============================================ */}
       <main className="flex-1 pb-20 lg:pb-0">{children}</main>
 
-      {/* ============================================ */}
-      {/* Footer */}
-      {/* ============================================ */}
       <ShopFooter />
 
-      {/* ============================================ */}
-      {/* Mobile bottom nav */}
-      {/* ============================================ */}
       <nav className="lg:hidden fixed bottom-0 left-0 right-0 z-40 bg-white border-t border-line shadow-[0_-2px_10px_rgba(0,0,0,0.04)]">
         <div className="grid grid-cols-4">
           {MOBILE_NAV.map((item) => {
             const isActive =
               pathname === item.href ||
               (item.href !== '/' && pathname.startsWith(item.href));
+            const isCart = item.href === '/cart';
             return (
               <Link
                 key={item.href}
                 href={item.href}
-                className={`flex flex-col items-center justify-center py-2.5 gap-0.5 transition ${
+                className={`relative flex flex-col items-center justify-center py-2.5 gap-0.5 transition ${
                   isActive ? 'text-wine' : 'text-gray-500'
                 }`}
               >
-                <span className="text-xl leading-none">{item.icon}</span>
+                <span className="text-xl leading-none relative">
+                  {item.icon}
+                  {isCart && cartCount > 0 && (
+                    <span className="absolute -top-1.5 -right-2 bg-wine text-white text-[9px] font-bold rounded-full min-w-[14px] h-[14px] flex items-center justify-center px-0.5">
+                      {cartCount > 99 ? '99+' : cartCount}
+                    </span>
+                  )}
+                </span>
                 <span className="text-[10px] font-medium">{item.label}</span>
               </Link>
             );

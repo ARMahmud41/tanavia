@@ -13,10 +13,10 @@ export interface MegaMenuColumn {
 export interface MegaMenuConfig {
   label: string;
   href: string;
-  accent: string; // tailwind color class (e.g. 'text-wine', 'text-pink-600')
-  underline: string; // underline color
+  accent: string;
+  underline: string;
   columns: MegaMenuColumn[];
-  categorySlug: string; // for fetching new arrivals
+  categorySlug: string;
 }
 
 interface Product {
@@ -31,9 +31,10 @@ interface Product {
 interface Props {
   config: MegaMenuConfig;
   onClose: () => void;
+  onMouseEnter: () => void; // 🟢 নতুন যোগ করা হয়েছে
 }
 
-export function MegaMenu({ config, onClose }: Props) {
+export function MegaMenu({ config, onClose, onMouseEnter }: Props) {
   const [newArrivals, setNewArrivals] = useState<Product[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -56,11 +57,13 @@ export function MegaMenu({ config, onClose }: Props) {
 
   return (
     <div
-      className="absolute left-0 right-0 top-full bg-white border-t border-line shadow-[0_8px_24px_rgba(0,0,0,0.08)] z-40"
+      className="absolute left-0 right-0 top-full bg-white border-t border-line shadow-[0_8px_24px_rgba(0,0,0,0.08)] z-40 animate-in fade-in slide-in-from-top-1 duration-200"
+      onMouseEnter={onMouseEnter} // 🟢 মাউস মেনুর ওপর আসলে টাইমার ক্লিয়ার হবে
       onMouseLeave={onClose}
     >
       <div className="container-wrap px-4 sm:px-6 lg:px-8 py-8">
         <div className="grid grid-cols-1 lg:grid-cols-4 gap-8">
+          
           {/* Left: Subcategory columns */}
           <div className="lg:col-span-3 grid grid-cols-2 sm:grid-cols-3 gap-6">
             {config.columns.map((col) => (
@@ -70,19 +73,26 @@ export function MegaMenu({ config, onClose }: Props) {
                 >
                   {col.title}
                 </h3>
-                <ul className="space-y-2.5">
-                  {col.items.map((item) => (
-                    <li key={item.label}>
-                      <Link
-                        href={item.href}
-                        onClick={onClose}
-                        className="text-sm text-ink hover:text-wine transition"
-                      >
-                        {item.label}
-                      </Link>
-                    </li>
-                  ))}
-                </ul>
+                
+                {col.items.length > 0 ? (
+                  <ul className="space-y-2.5">
+                    {col.items.map((item) => (
+                      <li key={item.label}>
+                        <Link
+                          href={item.href}
+                          onClick={onClose}
+                          className="text-sm text-ink hover:text-wine transition block"
+                        >
+                          {item.label}
+                        </Link>
+                      </li>
+                    ))}
+                  </ul>
+                ) : (
+                  <div className="text-sm text-gray-400 italic py-1">
+                    Coming soon
+                  </div>
+                )}
               </div>
             ))}
           </div>
@@ -105,7 +115,9 @@ export function MegaMenu({ config, onClose }: Props) {
                 ))}
               </div>
             ) : newArrivals.length === 0 ? (
-              <p className="text-xs text-muted">No new arrivals yet</p>
+              <div className="text-sm text-gray-400 italic py-1">
+                Coming soon
+              </div>
             ) : (
               <div className="grid grid-cols-2 gap-3">
                 {newArrivals.map((p) => {

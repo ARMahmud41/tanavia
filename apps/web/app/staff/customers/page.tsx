@@ -1,11 +1,10 @@
 'use client';
 
 import Link from 'next/link';
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, Suspense } from 'react';
 import { useRouter, useSearchParams, usePathname } from 'next/navigation';
 import { api, ApiError } from '@/lib/api';
 import { getToken, getCurrentUser } from '@/lib/auth';
-import { formatDateTime } from '@/lib/format';
 import { CustomerAvatar } from '@/components/customers/CustomerAvatar';
 import { CustomerStatusBadge } from '@/components/customers/StatusBadge';
 import { AddCustomerModal } from '@/components/customers/AddCustomerModal';
@@ -92,7 +91,7 @@ function timeAgo(date: string | null | undefined): string {
 // ============================================
 // Page
 // ============================================
-export default function CustomersPage() {
+function CustomersPageContent() {
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
@@ -126,6 +125,7 @@ export default function CustomersPage() {
     const qs = params.toString();
     router.replace(`${pathname}${qs ? `?${qs}` : ''}`, { scroll: false });
     setPage(1);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [segment]);
 
   // Load
@@ -146,7 +146,7 @@ export default function CustomersPage() {
       if (search.trim()) countsQs.set('q', search.trim());
 
       const [listRes, statsRes, countsRes] = await Promise.all([
-        api.get<Customer[]>(`/api/customers?${qs.toString()}`, { token }),
+        api.get<any>(`/api/customers?${qs.toString()}`, { token }),
         api.get<Stats>(`/api/customers/stats`, { token }),
         api.get<Record<string, number>>(
           `/api/customers/segment-counts?${countsQs.toString()}`,
@@ -154,10 +154,24 @@ export default function CustomersPage() {
         ),
       ]);
 
-      setCustomers(listRes.data || []);
-      setPagination(listRes.pagination || null);
-      setStats(statsRes.data || null);
-      setSegmentCounts(countsRes.data || {});
+      // Safely extract the items array
+      let customerItems: Customer[] = [];
+      if (listRes?.data && Array.isArray(listRes.data)) {
+        customerItems = listRes.data;
+      } else if (listRes?.data?.items && Array.isArray(listRes.data.items)) {
+        customerItems = listRes.data.items;
+      }
+
+      setCustomers(customerItems);
+      
+      const paginationData = 
+        listRes?.pagination || 
+        listRes?.data?.pagination || 
+        null;
+      setPagination(paginationData);
+      
+      setStats(statsRes?.data || null);
+      setSegmentCounts(countsRes?.data || {});
     } catch (err) {
       const msg =
         err instanceof ApiError
@@ -603,5 +617,19 @@ function StatCard({
         </div>
       </div>
     </Tag>
+  );
+}
+
+export default function CustomersPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="p-16 text-center text-sm text-muted">
+          Loading...
+        </div>
+      }
+    >
+      <CustomersPageContent />
+    </Suspense>
   );
 }

@@ -54,7 +54,12 @@ export default function EditCouponPage() {
     try {
       const token = getToken() || undefined;
       const res = await api.get<Coupon>(`/api/coupons/${couponId}`, { token });
-      const c = res.data;
+      const c = res.data ?? null;
+      if (!c) {
+        setError('Coupon not found');
+        setLoading(false);
+        return;
+      }
       setCoupon(c);
       setForm({
         code: c.code,

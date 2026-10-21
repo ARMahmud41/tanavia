@@ -5,6 +5,7 @@ import cookie from '@fastify/cookie';
 import jwt from '@fastify/jwt';
 import multipart from '@fastify/multipart';
 import fastifyStatic from '@fastify/static';
+import rateLimit from '@fastify/rate-limit';
 import path from 'node:path';
 import { PrismaClient } from '@prisma/client';
 import { registerRoutes } from './routes/index.js';
@@ -46,9 +47,7 @@ export async function buildApp() {
   });
   app.log.info('✅ Prisma connected to database');
 
-  // Register keep-alive plugin (Neon cold start mitigation)
-  const { default: keepAlivePlugin } = await import('./plugins/keep-alive.js');
-  await app.register(keepAlivePlugin);
+  // Neon keep-alive removed — local MySQL has no cold start
 
   // ============================================
   // Security / Core plugins
@@ -59,13 +58,35 @@ export async function buildApp() {
   });
   app.log.info('✅ Helmet security headers configured');
 
+  // ============================================
+  // SECURITY: Rate Limiting
+  // ============================================
+  await app.register(rateLimit, {
+    max: 100, // Max 100 requests per minute per IP
+    timeWindow: '1 minute',
+    errorResponseBuilder: (req, context) => ({
+      statusCode: 429,
+      error: 'Too Many Requests',
+      message: `Rate limit exceeded. Please try again after ${context.after}.`,
+    }),
+  });
+
+  // ============================================
+  // SECURITY: Strict CORS (Only allowed domains)
+  // ============================================
   await app.register(cors, {
-    origin: (process.env.WEB_URL || 'http://localhost:3000').split(','),
+    origin: [
+      'http://localhost:3000',
+      'http://localhost:3001',
+      'https://tanavia.com',
+      'https://www.tanavia.com',
+    ],
     credentials: true,
+    methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization'],
   });
-  app.log.info('✅ CORS configured', {
-    allowedOrigins: (process.env.WEB_URL || 'http://localhost:3000').split(','),
-  });
+
+  app.log.info('✅ CORS & Rate Limit configured');
 
   await app.register(cookie, {
     secret: process.env.JWT_SECRET || 'dev-secret-change-me',

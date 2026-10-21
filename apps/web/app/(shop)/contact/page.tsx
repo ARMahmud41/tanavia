@@ -6,7 +6,7 @@ import { useState } from 'react';
 const CONTACT_INFO = {
   email: 'tanaviashop@gmail.com',
   phone: '01620934350',
-  whatsapp: '+8801620934350',
+  whatsapp: '+8801880659448',
   instagram: 'https://www.instagram.com/tanavia.bd',
   tiktok: 'https://www.tiktok.com/@tanavia.shop?lang=en',
   pinterest: 'https://pin.it/6AYZzBX3E',

@@ -1,45 +1,48 @@
 'use client';
 
-import { useEffect, useState } from 'react';
-
-const ANNOUNCEMENTS = [
-  '🚚 Free delivery over ৳5,000',
-  '💵 Cash on Delivery Available',
-  '↩️ 7-day easy return',
-  '✨ New arrivals every week',
-];
-
-// Change interval here — 30000 = 30s, 4000 = 4s
-const INTERVAL_MS = 30000;
-
 export function AnnouncementBar() {
-  const [index, setIndex] = useState(0);
-  const [visible, setVisible] = useState(true);
-
-  useEffect(() => {
-    const timer = setInterval(() => {
-      // Fade out
-      setVisible(false);
-      setTimeout(() => {
-        setIndex((i) => (i + 1) % ANNOUNCEMENTS.length);
-        setVisible(true);
-      }, 300);
-    }, INTERVAL_MS);
-
-    return () => clearInterval(timer);
-  }, []);
+  const ANNOUNCEMENTS = [
+    '🚚 Free delivery over ৳5,000',
+    '💵 Cash on Delivery Available',
+    '↩️ 7-day easy return',
+    '✨ New arrivals every week',
+  ];
 
   return (
-    <div className="bg-wine text-white text-xs sm:text-sm py-2 text-center overflow-hidden">
-      <div className="container-wrap px-4 h-5 flex items-center justify-center">
-        <span
-          className={`inline-block transition-opacity duration-300 ${
-            visible ? 'opacity-100' : 'opacity-0'
-          }`}
-        >
-          {ANNOUNCEMENTS[index]}
-        </span>
+    <div className="bg-[#7A293B] text-white py-2 overflow-hidden relative flex items-center">
+      <div className="flex whitespace-nowrap animate-marquee-slow">
+        {/* প্রথম সেট */}
+        <div className="flex items-center gap-16 px-8">
+          {ANNOUNCEMENTS.map((msg, i) => (
+            <span key={i} className="text-xs sm:text-sm font-medium flex items-center gap-2">
+              {msg}
+            </span>
+          ))}
+        </div>
+        
+        {/* দ্বিতীয় সেট (লুপ হওয়ার জন্য) */}
+        <div className="flex items-center gap-16 px-8" aria-hidden="true">
+          {ANNOUNCEMENTS.map((msg, i) => (
+            <span key={`dup-${i}`} className="text-xs sm:text-sm font-medium flex items-center gap-2">
+              {msg}
+            </span>
+          ))}
+        </div>
       </div>
+
+      {/* CSS Animation */}
+      <style jsx global>{`
+        @keyframes marqueeSlow {
+          0% { transform: translateX(0); }
+          100% { transform: translateX(-50%); }
+        }
+        .animate-marquee-slow {
+          animation: marqueeSlow 35s linear infinite; /* 🟢 35s দেওয়া হয়েছে একদম স্লো হওয়ার জন্য */
+        }
+        .animate-marquee-slow:hover {
+          animation-play-state: paused;
+        }
+      `}</style>
     </div>
   );
 }

@@ -116,11 +116,12 @@ export class PurchaseService {
     if (filters.status) where.status = filters.status as any;
     if (filters.supplierId) where.supplierId = filters.supplierId;
 
+    // MySQL is case-insensitive by default (utf8mb4_unicode_ci)
     if (filters.search) {
       const q = filters.search.trim();
       where.OR = [
-        { poNumber: { contains: q, mode: 'insensitive' } },
-        { supplier: { name: { contains: q, mode: 'insensitive' } } },
+        { poNumber: { contains: q } },
+        { supplier: { name: { contains: q } } },
       ];
     }
 
@@ -389,7 +390,7 @@ export class PurchaseService {
           );
         }
 
-        // Row lock on variant
+        // Row lock on variant — MySQL backtick syntax
         const locked = await tx.$queryRaw<
           Array<{
             id: string;
@@ -397,7 +398,7 @@ export class PurchaseService {
             reserved: number;
             cost: number | null;
           }>
-        >`SELECT id, qty, reserved, cost FROM "Variant" WHERE id = ${item.variantId} FOR UPDATE`;
+        >`SELECT id, qty, reserved, cost FROM \`Variant\` WHERE id = ${item.variantId} FOR UPDATE`;
 
         if (!locked || locked.length === 0) {
           throw new NotFoundError('Variant not found');

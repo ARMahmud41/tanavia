@@ -1,6 +1,7 @@
 import type { PrismaClient, Prisma } from '@prisma/client';
 import { randomUUID } from 'node:crypto';
 import { StockService } from './stock.service.js';
+import { CustomerService } from './customer.service.js';
 import { WhatsAppService } from './whatsapp.service.js';
 import { TelegramService } from './telegram.service.js';
 import {
@@ -25,6 +26,7 @@ interface PlaceOrderInput {
   customerEmail?: string;
   address?: string;
   district?: string;
+  upazila?: string; // ← Added to interface
   note?: string;
   paymentMethod: PaymentMethod;
   paymentTxId?: string;
@@ -346,57 +348,79 @@ export class OrderService {
 
         const orderId = randomUUID();
 
-        await tx.$executeRaw`
-          INSERT INTO "Order" (
-            id, "orderNumber", channel, "userId", status,
-            "customerName", "customerPhone", "customerEmail",
-            address, district, note, subtotal, discount,
-            "deliveryFee", total, "couponCode",
-            "paymentMethod", "paymentStatus", "paymentTxId",
-            "createdAt", "updatedAt"
-          ) VALUES (
-            ${orderId},
-            ${orderNumber},
-            'ONLINE'::"OrderChannel",
-            ${customer.id},
-            'PLACED'::"OrderStatus",
-            ${input.customerName},
-            ${input.customerPhone},
-            ${input.customerEmail ?? null},
-            ${input.address ?? null},
-            ${input.district ?? null},
-            ${input.note ?? null},
-            ${subtotal},
-            ${discount},
-            ${deliveryFee},
-            ${total},
-            ${couponCode},
-            ${input.paymentMethod}::"PaymentMethod",
-            ${paymentStatus}::"PaymentStatus",
-            ${input.paymentTxId ?? null},
-            NOW(), NOW()
-          )
-        `;
+        // ── Prisma native create (MySQL compatible — no raw SQL) ──
+        await tx.order.create({
+          data: {
+            id: orderId,
+            orderNumber,
+            channel: 'ONLINE',
+            userId: customer.id,
+            status: 'PLACED',
+            customerName: input.customerName,
+            customerPhone: input.customerPhone,
+            customerEmail: input.customerEmail ?? null,
+            address: input.address ?? null,
+            district: input.district ?? null,
+            note: input.note ?? null,
+            subtotal,
+            discount,
+            deliveryFee,
+            total,
+            couponCode: couponCode ?? null,
+            paymentMethod: input.paymentMethod as any,
+            paymentStatus: paymentStatus as any,
+            paymentTxId: input.paymentTxId ?? null,
+          },
+        });
 
         for (const li of lineItems) {
-          await tx.$executeRaw`
-            INSERT INTO "OrderItem" (
-              id, "orderId", "productId", name, size, color, qty, price, cost
-            ) VALUES (
-              ${randomUUID()}, ${orderId}, ${li.productId},
-              ${li.name}, ${li.size}, ${li.color}, ${li.qty},
-              ${li.price}, ${li.cost}
-            )
-          `;
+          await tx.orderItem.create({
+            data: {
+              id: randomUUID(),
+              orderId,
+              productId: li.productId,
+              name: li.name,
+              size: li.size,
+              color: li.color,
+              qty: li.qty,
+              price: li.price,
+              cost: li.cost,
+            },
+          });
         }
 
-        await tx.$executeRaw`
-          INSERT INTO "OrderEvent" (id, "orderId", status, note, actor, "createdAt")
-          VALUES (
-            ${randomUUID()}, ${orderId}, 'PLACED',
-            'Order placed by customer', 'system', NOW()
-          )
-        `;
+        await tx.orderEvent.create({
+          data: {
+            id: randomUUID(),
+            orderId,
+            status: 'PLACED',
+            note: 'Order placed by customer',
+            actor: 'system',
+          },
+        });
+
+        // ============================================
+        // Auto-create/update Customer from order
+        // ============================================
+        const customerRecord = await CustomerService.upsertFromOrder(tx, {
+          name: input.customerName,
+          phone: input.customerPhone,
+          email: input.customerEmail ?? null,
+          source: 'ONLINE',
+          orderTotal: Number(total),
+          address: input.address,
+          district: input.district,
+          upazila: (input as any).upazila,
+          userId: customer.id,
+        });
+
+        // Link customerId to order
+        if (customerRecord) {
+          await tx.order.update({
+            where: { id: orderId },
+            data: { customerId: customerRecord.id },
+          });
+        }
 
         const createdOrder = await tx.order.findUnique({
           where: { id: orderId },
@@ -450,6 +474,16 @@ export class OrderService {
           });
         }
 
+        // 🎯 Create notification for new order
+        await tx.notification.create({
+          data: {
+            type: 'ORDER',
+            title: 'New Order Received',
+            body: `Order ${orderNumber} placed by ${input.customerName} — ৳${total}`,
+            link: `/admin/orders`,
+          },
+        });
+
         return createdOrder;
       },
       {
@@ -463,7 +497,7 @@ export class OrderService {
       customerName: order.customerName,
       customerPhone: order.customerPhone,
       district: order.district || '—',
-      total: order.total,
+      total: Number(order.total),
       paymentMethod: order.paymentMethod,
       itemsCount: order.items?.length || 0,
       channel: 'ONLINE',
@@ -477,7 +511,7 @@ export class OrderService {
       customerPhone: order.customerPhone,
       district: order.district || '—',
       address: order.address,
-      total: order.total,
+      total: Number(order.total),
       paymentMethod: order.paymentMethod,
       itemsCount: order.items?.length || 0,
       channel: 'ONLINE',
@@ -543,12 +577,10 @@ export class OrderService {
     let resolvedVerifiedBy: string | null = null;
 
     if (isAdmin || isCashOrCard) {
-      // Scenario 1 (admin) + Scenario 3 (cash) + Scenario 4 (card) → auto-confirm
       resolvedPaymentStatus = 'PAID';
       resolvedVerifiedAt = new Date();
       resolvedVerifiedBy = actorId || null;
     } else if (isMobile) {
-      // Scenario 2 — staff + bKash/Nagad/Rocket → pending admin verify
       if (!input.paymentTxId || input.paymentTxId.trim().length < 4) {
         throw new BadRequestError(
           'Transaction ID is required for bKash/Nagad/Rocket'
@@ -562,7 +594,6 @@ export class OrderService {
       }
       resolvedPaymentStatus = 'PENDING';
     } else {
-      // Fallback — shouldn't happen
       resolvedPaymentStatus = 'PAID';
       resolvedVerifiedAt = new Date();
       resolvedVerifiedBy = actorId || null;
@@ -647,63 +678,81 @@ export class OrderService {
 
         const orderId = randomUUID();
 
-        await tx.$executeRaw`
-          INSERT INTO "Order" (
-            id, "orderNumber", channel, "shiftId", "userId", status,
-            "customerName", "customerPhone", note, subtotal, discount,
-            "deliveryFee", total, "paymentMethod", "paymentStatus",
-            "paymentTxId", "senderPhone", "verifiedAt",
-            "createdAt", "updatedAt"
-          ) VALUES (
-            ${orderId},
-            ${orderNumber},
-            'OFFLINE'::"OrderChannel",
-            ${input.shiftId ?? null},
-            ${actorId ?? null},
-            'DELIVERED'::"OrderStatus",
-            ${input.customerName || 'Walk-in Customer'},
-            ${input.customerPhone || ''},
-            ${input.note ?? null},
-            ${subtotal},
-            ${discount},
-            0,
-            ${total},
-            ${input.paymentMethod}::"PaymentMethod",
-            ${resolvedPaymentStatus}::"PaymentStatus",
-            ${input.paymentTxId ?? null},
-            ${input.senderPhone ?? input.customerPhone ?? null},
-            ${resolvedVerifiedAt},
-            NOW(), NOW()
-          )
-        `;
+        // ── Prisma native create (MySQL compatible — no raw SQL) ──
+        await tx.order.create({
+          data: {
+            id: orderId,
+            orderNumber,
+            channel: 'OFFLINE',
+            shiftId: input.shiftId ?? null,
+            userId: actorId ?? null,
+            status: 'DELIVERED',
+            customerName: input.customerName || 'Walk-in Customer',
+            customerPhone: input.customerPhone || '',
+            note: input.note ?? null,
+            subtotal,
+            discount,
+            deliveryFee: 0,
+            total,
+            paymentMethod: input.paymentMethod as any,
+            paymentStatus: resolvedPaymentStatus as any,
+            paymentTxId: input.paymentTxId ?? null,
+            senderPhone: input.senderPhone ?? input.customerPhone ?? null,
+            verifiedAt: resolvedVerifiedAt,
+          },
+        });
 
         for (const li of lineItems) {
-          await tx.$executeRaw`
-            INSERT INTO "OrderItem" (
-              id, "orderId", "productId", name, size, color, qty, price, cost
-            ) VALUES (
-              ${randomUUID()}, ${orderId}, ${li.productId},
-              ${li.name}, ${li.size}, ${li.color}, ${li.qty},
-              ${li.price}, ${li.cost}
-            )
-          `;
+          await tx.orderItem.create({
+            data: {
+              id: randomUUID(),
+              orderId,
+              productId: li.productId,
+              name: li.name,
+              size: li.size,
+              color: li.color,
+              qty: li.qty,
+              price: li.price,
+              cost: li.cost,
+            },
+          });
         }
 
         for (const evt of [
-          { status: 'PLACED', note: 'Offline sale', actor: actorId || 'system' },
+          { status: 'PLACED' as const, note: 'Offline sale', actor: actorId || 'system' },
           {
-            status: 'DELIVERED',
+            status: 'DELIVERED' as const,
             note: 'Completed at counter',
             actor: actorId || 'system',
           },
         ]) {
-          await tx.$executeRaw`
-            INSERT INTO "OrderEvent" (id, "orderId", status, note, actor, "createdAt")
-            VALUES (
-              ${randomUUID()}, ${orderId}, ${evt.status},
-              ${evt.note}, ${evt.actor}, NOW()
-            )
-          `;
+          await tx.orderEvent.create({
+            data: {
+              id: randomUUID(),
+              orderId,
+              status: evt.status,
+              note: evt.note,
+              actor: evt.actor,
+            },
+          });
+        }
+
+        // ============================================
+        // Auto-create/update Customer from POS order
+        // ============================================
+        const posCustomer = await CustomerService.upsertFromOrder(tx, {
+          name: input.customerName || 'Walk-in Customer',
+          phone: input.customerPhone || '',
+          email: null,
+          source: 'POS',
+          orderTotal: Number(total),
+        });
+
+        if (posCustomer) {
+          await tx.order.update({
+            where: { id: orderId },
+            data: { customerId: posCustomer.id },
+          });
         }
 
         const order = await tx.order.findUnique({
@@ -762,16 +811,18 @@ export class OrderService {
   /**
    * Get order by ID (role-aware).
    *
-   * - ADMIN: full data including cost/profit/adminNote
-   * - STAFF: hidden fields (cost, profit, adminNote) removed from response
-   *          Staff can only see their OWN offline sales, or ONLINE (read-only)
+   * Access rules:
+   *   ADMIN    → all orders
+   *   STAFF    → all ONLINE orders (customer support) + own OFFLINE orders
+   *   CUSTOMER → only own ONLINE orders
    */
   static async getById(
     id: string,
     prisma: PrismaClient,
-    options?: { role?: 'STAFF' | 'ADMIN'; userId?: string }
+    options?: { role?: 'STAFF' | 'ADMIN' | 'CUSTOMER'; userId?: string }
   ) {
     const isAdmin = options?.role === 'ADMIN';
+    const isStaff = options?.role === 'STAFF';
     const userId = options?.userId;
 
     const order = await prisma.order.findUnique({
@@ -805,7 +856,8 @@ export class OrderService {
         createdAt: true,
         updatedAt: true,
         shiftId: isAdmin ? true : false,
-        createdById: true, // always select — needed for authorization check
+        createdById: true,
+        userId: true, // 🎯 ownership check-এর জন্য জরুরি
         cancelReason: isAdmin ? true : false,
         adminNote: isAdmin ? true : false,
         user: {
@@ -852,21 +904,21 @@ export class OrderService {
 
     if (!order) throw new NotFoundError('Order not found');
 
-    // Role-based authorization
+    // ============================================
+    // SECURITY: Role-based Authorization (IDOR Fix)
+    // ============================================
     if (!isAdmin) {
-      console.log('[DEBUG] getById service:', JSON.stringify({
-        orderId: order.id,
-        orderCreatedById: order.createdById,
-        requestUserId: userId,
-        isAdmin,
-        match: order.createdById === userId,
-      }));
-
-      // STAFF can only see:
-      // - Their own OFFLINE sales
-      // - Any ONLINE order (read-only)
-      if (order.channel === 'OFFLINE' && order.createdById !== userId) {
-        throw new NotFoundError('Order not found');
+      if (order.channel === 'ONLINE') {
+        // STAFF → all ONLINE orders (customer support)
+        // CUSTOMER → only own ONLINE orders
+        if (!isStaff && order.userId !== userId) {
+          throw new NotFoundError('Order not found');
+        }
+      } else if (order.channel === 'OFFLINE') {
+        // STAFF & CUSTOMER → only own OFFLINE orders
+        if (order.createdById !== userId) {
+          throw new NotFoundError('Order not found');
+        }
       }
     }
 
@@ -883,29 +935,24 @@ export class OrderService {
       return { ...order, profit };
     }
 
-    // ─── Strip internal fields before returning to STAFF ───
-    if (!isAdmin) {
-      // Remove sensitive/internal fields from response
-      const sanitized = { ...order } as any;
-      delete sanitized.createdById;
-      delete sanitized.shiftId;
-      delete sanitized.cancelReason;
-      delete sanitized.adminNote;
-      delete sanitized.senderPhone;
-      delete sanitized.verifiedAt;
-      delete sanitized.codSettledAt;
-      delete sanitized.transactions;
-      // Also strip cost from items
-      if (Array.isArray(sanitized.items)) {
-        sanitized.items = sanitized.items.map((it: any) => {
-          const { cost, ...rest } = it;
-          return rest;
-        });
-      }
-      return sanitized;
+    // ─── Strip internal fields before returning to non-admin ───
+    const sanitized = { ...order } as any;
+    delete sanitized.createdById;
+    delete sanitized.userId;
+    delete sanitized.shiftId;
+    delete sanitized.cancelReason;
+    delete sanitized.adminNote;
+    delete sanitized.senderPhone;
+    delete sanitized.verifiedAt;
+    delete sanitized.codSettledAt;
+    delete sanitized.transactions;
+    if (Array.isArray(sanitized.items)) {
+      sanitized.items = sanitized.items.map((it: any) => {
+        const { cost, ...rest } = it;
+        return rest;
+      });
     }
-
-    return order;
+    return sanitized;
   }
 
   /**
@@ -946,10 +993,6 @@ export class OrderService {
 
   /**
    * List orders (role-aware).
-   *
-   * - ADMIN: sees all orders (ONLINE + OFFLINE), with cost/profit/adminNote
-   * - STAFF: sees only their own OFFLINE sales, or ONLINE (read-only, no cost)
-   *          Never sees unitCost, profit, adminNote from other staff
    */
   static async list(
     filters: ListFilters & {
@@ -969,10 +1012,8 @@ export class OrderService {
 
     // ---- Channel scoping ----
     if (isAdmin) {
-      // Admin: respect channel filter or show all
       if (filters.channel) where.channel = filters.channel;
     } else {
-      // Staff: default OFFLINE + own sales
       if (filters.channel === 'ONLINE') {
         where.channel = 'ONLINE';
       } else {
@@ -1000,9 +1041,9 @@ export class OrderService {
     if (filters.search) {
       const q = filters.search.trim();
       where.OR = [
-        { orderNumber: { contains: q, mode: 'insensitive' } },
-        { customerName: { contains: q, mode: 'insensitive' } },
-        { customerPhone: { contains: q, mode: 'insensitive' } },
+        { orderNumber: { contains: q } },
+        { customerName: { contains: q } },
+        { customerPhone: { contains: q } },
       ];
     }
 
@@ -1054,7 +1095,7 @@ export class OrderService {
       shiftId: isAdmin ? true : false,
       createdById: isAdmin ? true : false,
       cancelReason: isAdmin ? true : false,
-      adminNote: false, // never returned in list; only in detail for admin
+      adminNote: false,
       items: {
         select: {
           id: true,
@@ -1064,7 +1105,7 @@ export class OrderService {
           color: true,
           qty: true,
           price: true,
-          cost: isAdmin ? true : false, // ← staff never sees cost
+          cost: isAdmin ? true : false,
           product: {
             select: {
               id: true,

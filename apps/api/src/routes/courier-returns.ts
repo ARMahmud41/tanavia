@@ -118,19 +118,26 @@ export async function courierReturnRoutes(app: FastifyInstance) {
             });
             if (!variant) continue;
 
+            const beforeQty = variant.qty;
+            const afterQty = beforeQty + item.qty;
+
             await tx.variant.update({
               where: { id: variant.id },
               data: { qty: { increment: item.qty } },
             });
 
+            // ✅ FIXED: StockMovement schema uses refId, actorId, before, after — NOT orderId/userId
             await tx.stockMovement.create({
               data: {
+                productId: item.productId,
                 variantId: variant.id,
-                type: 'IN',
+                type: 'PURCHASE',
                 qty: item.qty,
+                before: beforeQty,
+                after: afterQty,
                 reason: `Return restock from ${ret.order.orderNumber}`,
-                orderId: ret.order.id,
-                userId: user?.id,
+                refId: ret.order.id,
+                actorId: user?.id || null,
               },
             });
           }

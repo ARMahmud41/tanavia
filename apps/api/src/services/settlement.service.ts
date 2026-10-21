@@ -73,8 +73,7 @@ export class SettlementService {
             district: true,
             total: true,
             codAmount: true,
-            deliveredAt: true,
-            courierDeliveredAt: true,
+            courierDeliveredAt: true, // ✅ FIXED: removed duplicate
             status: true,
           },
         },

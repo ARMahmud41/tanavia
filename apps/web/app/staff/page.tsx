@@ -128,11 +128,15 @@ export default function StaffDashboardPage() {
   const [lowStock, setLowStock] = useState<LowStockItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [userName, setUserName] = useState('');
+  const [userTarget, setUserTarget] = useState(0);
   const [now, setNow] = useState(new Date());
 
   useEffect(() => {
     const user = getCurrentUser();
-    if (user) setUserName(user.name);
+    if (user) {
+      setUserName(user.name);
+      setUserTarget(user.target || 0);
+    }
 
     async function load() {
       const token = getToken() || undefined;
@@ -397,7 +401,7 @@ export default function StaffDashboardPage() {
             <h2 className="font-serif text-lg font-semibold text-[var(--staff-text)]">
               Daily target
             </h2>
-            <span className="text-xs text-[var(--staff-muted)]">Goal {tk(60000)}</span>
+            <span className="text-xs text-[var(--staff-muted)]">Goal {tk(userTarget)}</span>
           </div>
           <div className="flex items-center gap-5">
             <CircularProgress value={70} />

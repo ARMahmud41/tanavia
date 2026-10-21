@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, Suspense } from 'react';
 import { useRouter, useSearchParams, usePathname } from 'next/navigation';
 import { api, ApiError } from '@/lib/api';
 import { getToken } from '@/lib/auth';
@@ -116,7 +116,7 @@ const STOCK_FILTERS = [
 // ============================================
 // Page
 // ============================================
-export default function StaffProductsPage() {
+function StaffProductsPageContent() {
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
@@ -673,5 +673,19 @@ function StatCard({
         </div>
       </div>
     </Tag>
+  );
+}
+
+export default function StaffProductsPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="p-16 text-center text-sm text-muted">
+          Loading...
+        </div>
+      }
+    >
+      <StaffProductsPageContent />
+    </Suspense>
   );
 }

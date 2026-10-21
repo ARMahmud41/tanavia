@@ -5,6 +5,7 @@ import {
 } from '../middleware/require-role.js';
 import { BadRequestError, NotFoundError } from '../utils/errors.js';
 import crypto from 'node:crypto';
+import { randomUUID } from 'node:crypto';
 
 // ============================================
 // Payment Settings (existing)
@@ -51,7 +52,7 @@ export async function paymentRoutes(app: FastifyInstance) {
         where: { key: 'pay' },
       });
 
-      const settings = (row?.value as PaymentSettings) || DEFAULT_SETTINGS;
+      const settings = (row?.value as unknown as PaymentSettings) || DEFAULT_SETTINGS;
 
       const masked: PaymentSettings = {
         ...settings,
@@ -75,9 +76,10 @@ export async function paymentRoutes(app: FastifyInstance) {
       const row = await app.prisma.setting.findUnique({
         where: { key: 'pay' },
       });
-      const current = (row?.value as PaymentSettings) || DEFAULT_SETTINGS;
+      const current = (row?.value as unknown as PaymentSettings) || DEFAULT_SETTINGS;
 
-      const cardUpdate = input.card || {};
+      // ✅ FIXED: Cast to any so storePassword is accessible
+      const cardUpdate = (input.card || {}) as any;
       const cardMerged = {
         ...current.card,
         ...cardUpdate,
@@ -109,7 +111,7 @@ export async function paymentRoutes(app: FastifyInstance) {
     const row = await app.prisma.setting.findUnique({
       where: { key: 'pay' },
     });
-    const settings = (row?.value as PaymentSettings) || DEFAULT_SETTINGS;
+    const settings = (row?.value as unknown as PaymentSettings) || DEFAULT_SETTINGS;
 
     const enabled = {
       COD: settings.cod,
@@ -125,9 +127,15 @@ export async function paymentRoutes(app: FastifyInstance) {
       ROCKET: settings.rocket.number,
     };
 
+    const types = {
+      BKASH: settings.bkash.type,
+      NAGAD: settings.nagad.type,
+      ROCKET: settings.rocket.type,
+    };
+
     return reply.send({
       success: true,
-      data: { enabled, numbers, cardProvider: settings.card.provider },
+      data: { enabled, numbers, types, cardProvider: settings.card.provider },
     });
   });
 
@@ -168,7 +176,7 @@ export async function paymentRoutes(app: FastifyInstance) {
     const row = await app.prisma.setting.findUnique({
       where: { key: 'pay' },
     });
-    const settings = (row?.value as PaymentSettings) || DEFAULT_SETTINGS;
+    const settings = (row?.value as unknown as PaymentSettings) || DEFAULT_SETTINGS;
 
     if (order.paymentMethod === 'CARD') {
       if (!settings.card.on) {
@@ -247,10 +255,10 @@ export async function paymentRoutes(app: FastifyInstance) {
       if (q.status) where.paymentStatus = q.status;
       if (q.search?.trim()) {
         where.OR = [
-          { orderNumber: { contains: q.search.trim(), mode: 'insensitive' } },
-          { paymentTxId: { contains: q.search.trim(), mode: 'insensitive' } },
+          { orderNumber: { contains: q.search.trim() } },
+          { paymentTxId: { contains: q.search.trim() } },
           { customerPhone: { contains: q.search.trim() } },
-          { customerName: { contains: q.search.trim(), mode: 'insensitive' } },
+          { customerName: { contains: q.search.trim() } },
         ];
       }
 
@@ -341,21 +349,27 @@ export async function paymentRoutes(app: FastifyInstance) {
         throw new BadRequestError('Already verified');
       }
 
-      const updated = await app.prisma.order.update({
-        where: { id },
-        data: {
-          paymentStatus: 'PAID',
-          verifiedAt: new Date(),
-        },
-      });
+      const updated = await app.prisma.$transaction(async (tx) => {
+        const updatedOrder = await tx.order.update({
+          where: { id },
+          data: {
+            paymentStatus: 'PAID',
+            verifiedAt: new Date(),
+          },
+        });
 
-      await app.prisma
-        .$executeRaw`
-          INSERT INTO "OrderEvent" (id, "orderId", status, note, actor, "createdAt")
-          VALUES (gen_random_uuid()::text, ${id}, 'PAYMENT_VERIFIED',
-                  'bKash/Nagad payment verified', ${actorId || 'system'}, NOW())
-        `
-        .catch(() => {});
+        await tx.orderEvent.create({
+          data: {
+            id: randomUUID(),
+            orderId: id,
+            status: 'PAYMENT_VERIFIED',
+            note: 'bKash/Nagad payment verified',
+            actor: actorId || 'system',
+          },
+        });
+
+        return updatedOrder;
+      });
 
       return reply.send({ success: true, data: updated });
     }
@@ -378,21 +392,27 @@ export async function paymentRoutes(app: FastifyInstance) {
       const order = await app.prisma.order.findUnique({ where: { id } });
       if (!order) throw new NotFoundError('Order not found');
 
-      const updated = await app.prisma.order.update({
-        where: { id },
-        data: {
-          paymentStatus: 'FAILED',
-          adminNote: body.reason.trim(),
-        },
-      });
+      const updated = await app.prisma.$transaction(async (tx) => {
+        const updatedOrder = await tx.order.update({
+          where: { id },
+          data: {
+            paymentStatus: 'FAILED',
+            adminNote: body.reason!.trim(),
+          },
+        });
 
-      await app.prisma
-        .$executeRaw`
-          INSERT INTO "OrderEvent" (id, "orderId", status, note, actor, "createdAt")
-          VALUES (gen_random_uuid()::text, ${id}, 'PAYMENT_REJECTED',
-                  ${body.reason.trim()}, ${actorId || 'system'}, NOW())
-        `
-        .catch(() => {});
+        await tx.orderEvent.create({
+          data: {
+            id: randomUUID(),
+            orderId: id,
+            status: 'PAYMENT_REJECTED',
+            note: body.reason!.trim(),
+            actor: actorId || 'system',
+          },
+        });
+
+        return updatedOrder;
+      });
 
       return reply.send({ success: true, data: updated });
     }

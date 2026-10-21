@@ -87,7 +87,7 @@ export class CouponService {
     if (filters.search) {
       where.code = {
         contains: filters.search.trim().toUpperCase(),
-        mode: 'insensitive',
+        
       };
     }
 
